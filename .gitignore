@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+
+# Bundled runtime (downloaded/installed on first use, not source)
+runtime/electron/
+runtime/player/node_modules/
+
+# Per-user session material — never commit
+nf_cookies.json
+runtime/player/nf_cookies.json
+*.log

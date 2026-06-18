@@ -1,0 +1,9 @@
+{
+  "name": "nfbridge-player",
+  "version": "0.1.0",
+  "description": "Embedded Netflix player wrapper (castLabs Electron) with custom subtitle re-render",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  }
+}

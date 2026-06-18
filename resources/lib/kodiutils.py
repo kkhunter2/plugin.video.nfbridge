@@ -1,0 +1,86 @@
+# -*- coding: utf-8 -*-
+"""Thin helpers over the Kodi Python API (xbmc/xbmcgui/xbmcplugin/xbmcaddon).
+
+Keeps the rest of the addon free of Kodi boilerplate and easy to unit-test:
+everything Kodi-specific funnels through here.
+"""
+try:
+    from urllib.parse import urlencode
+except ImportError:
+    from urllib import urlencode
+
+import xbmc
+import xbmcgui
+import xbmcplugin
+import xbmcaddon
+
+ADDON = xbmcaddon.Addon()
+ADDON_ID = ADDON.getAddonInfo('id')
+
+# populated per-invocation by router.set_context()
+_CTX = {'base_url': '', 'handle': -1, 'params': {}}
+
+
+def set_context(base_url, handle, params):
+    _CTX['base_url'] = base_url
+    _CTX['handle'] = handle
+    _CTX['params'] = params
+
+
+def handle():
+    return _CTX['handle']
+
+
+def param(name, default=None):
+    return _CTX['params'].get(name, default)
+
+
+def url_for(**kwargs):
+    """Build a plugin:// URL for this addon with the given query params."""
+    return '{0}?{1}'.format(_CTX['base_url'], urlencode(kwargs))
+
+
+def setting(key, default=''):
+    val = ADDON.getSetting(key)
+    return val if val != '' else default
+
+
+def log(msg, level=xbmc.LOGINFO):
+    xbmc.log('[{0}] {1}'.format(ADDON_ID, msg), level)
+
+
+def notify(msg, heading='Netflix (Bridge)'):
+    xbmcgui.Dialog().notification(heading, msg)
+
+
+def add_directory(label, url, art=None, info=None, is_folder=True, playable=False):
+    """Add a folder or an action item to the current directory."""
+    li = xbmcgui.ListItem(label=label)
+    if art:
+        li.setArt(art)
+    if info:
+        tag = li.getVideoInfoTag()
+        if 'title' in info:
+            tag.setTitle(info['title'])
+        if 'plot' in info:
+            tag.setPlot(info['plot'])
+        if 'mediatype' in info:
+            tag.setMediaType(info['mediatype'])
+    # Playable titles are launched externally (Layer 2). They are NOT Kodi-playable,
+    # so we mark them as plain action items: clicking runs the plugin's play route.
+    if playable:
+        li.setProperty('IsPlayable', 'false')
+    xbmcplugin.addDirectoryItem(handle(), url, li, isFolder=is_folder)
+
+
+def end_directory(content='videos', sort=True):
+    if sort:
+        xbmcplugin.addSortMethod(handle(), xbmcplugin.SORT_METHOD_UNSORTED)
+    xbmcplugin.setContent(handle(), content)
+    xbmcplugin.endOfDirectory(handle())
+
+
+def prompt(heading='Search Netflix'):
+    kb = xbmc.Keyboard('', heading)
+    kb.doModal()
+    return kb.getText() if kb.isConfirmed() else None

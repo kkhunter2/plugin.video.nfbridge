@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<settings version="1">
+  <section id="nfbridge">
+    <category id="playback" label="Playback">
+      <group id="1" label="Mode">
+        <setting id="playback_mode" type="string" label="Playback mode" help="How titles are played. 'Delegate' uses the OS's best Netflix client (4K on Windows via Edge/Netflix app). 'Embedded' uses a bundled VMP-signed player (1080p, integrated subtitles).">
+          <level>0</level>
+          <default>delegate</default>
+          <constraints>
+            <options>
+              <option label="Max quality (delegate to browser/app)">delegate</option>
+              <option label="Integrated (embedded player, custom subtitles)">embedded</option>
+            </options>
+          </constraints>
+          <control type="list" format="string"/>
+        </setting>
+      </group>
+      <group id="2" label="Delegate paths (optional overrides)">
+        <setting id="use_uwp_app" type="boolean" label="Prefer the Netflix Store app (Windows, 4K)">
+          <level>1</level><default>true</default>
+          <control type="toggle"/>
+        </setting>
+        <setting id="edge_path" type="path" label="Edge executable (override)">
+          <level>2</level><default></default>
+          <control type="button" format="file"><heading>Select msedge.exe</heading></control>
+        </setting>
+        <setting id="chrome_path" type="path" label="Chrome/Chromium executable (override)">
+          <level>2</level><default></default>
+          <control type="button" format="file"><heading>Select chrome</heading></control>
+        </setting>
+        <setting id="macos_browser" type="string" label="macOS browser app name">
+          <level>2</level><default>Safari</default>
+          <control type="edit" format="string"/>
+        </setting>
+      </group>
+      <group id="3" label="Embedded player">
+        <setting id="electron_path" type="path" label="Electron executable (override)">
+          <level>2</level><default></default>
+          <control type="button" format="file"><heading>Select electron</heading></control>
+        </setting>
+        <setting id="runtime_dir" type="path" label="Runtime dir (bundled player + electron)">
+          <level>2</level><default></default>
+          <control type="button" format="directory"><heading>Select runtime dir</heading></control>
+        </setting>
+      </group>
+    </category>
+  </section>
+</settings>
