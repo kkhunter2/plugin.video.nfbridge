@@ -1,0 +1,42 @@
+# Kodi Media Center language file
+# Addon Name: Netflix (Bridge)
+# Addon id: plugin.video.nfbridge
+msgid ""
+msgstr ""
+"Project-Id-Version: plugin.video.nfbridge\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: ko_KR\n"
+
+msgctxt "#30001"
+msgid "Search"
+msgstr "검색"
+
+msgctxt "#30002"
+msgid "My List"
+msgstr "내가 찜한 리스트"
+
+msgctxt "#30003"
+msgid "Series & Movies"
+msgstr "시리즈와 영화"
+
+msgctxt "#30004"
+msgid "Profiles"
+msgstr "프로필"
+
+msgctxt "#30005"
+msgid "Sign out"
+msgstr "로그아웃"
+
+msgctxt "#30006"
+msgid "Sign in to Netflix"
+msgstr "넷플릭스 로그인"
+
+msgctxt "#30007"
+msgid "Series"
+msgstr "시리즈"
+
+msgctxt "#30008"
+msgid "Movies"
+msgstr "영화"

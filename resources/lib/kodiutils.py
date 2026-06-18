@@ -68,6 +68,13 @@ def notify(msg, heading='Netflix (Bridge)'):
     xbmcgui.Dialog().notification(heading, msg)
 
 
+def localize(string_id, default=''):
+    try:
+        return ADDON.getLocalizedString(string_id) or default
+    except Exception:
+        return default
+
+
 def add_directory(label, url, art=None, info=None, is_folder=True, playable=False):
     """Add a folder or an action item to the current directory."""
     li = xbmcgui.ListItem(label=label)

@@ -188,8 +188,8 @@ def browse_client():
 
 def launch_signin(*_args):
     """Bring up the daemon's window on the Netflix sign-in page."""
-    if _platform() != 'windows':
-        kodiutils.notify('Embedded sign-in needs Windows (WebView2)')
+    if not _webview_cmd():
+        kodiutils.notify('Set "webview_python" in settings (or use the bundled exe)')
         return
     from resources.lib import nfclient
     c = nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon)
@@ -263,7 +263,9 @@ def play(video_id):
         return
     mode = kodiutils.setting('playback_mode', _default_mode())
     kodiutils.log('play {0} (mode={1}, platform={2})'.format(video_id, mode, _platform()))
-    if mode == 'embedded' and _platform() == 'windows' and _webview_cmd():
+    # Embedded uses the WebView daemon: the bundled exe on Windows, else a configured
+    # python + pywebview host (works on macOS/Linux too, where it is less tested).
+    if mode == 'embedded' and _webview_cmd():
         _play_embedded(video_id)
     else:
         _launch_delegate(video_id)

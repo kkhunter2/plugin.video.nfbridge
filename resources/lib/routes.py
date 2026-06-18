@@ -33,23 +33,26 @@ def root():
 def home():
     c = _client()
     if not c.ensure():
-        kodiutils.add_directory('[B]Sign in to Netflix[/B]', kodiutils.url_for(action='signin'))
-        kodiutils.notify('Sign in to Netflix to browse')
+        kodiutils.add_directory('[B]{0}[/B]'.format(kodiutils.localize(30006, 'Sign in to Netflix')),
+                                kodiutils.url_for(action='signin'))
+        kodiutils.notify(kodiutils.localize(30006, 'Sign in to Netflix'))
         return kodiutils.end_directory(content='files')
     try:
         data = cache.cached('home', 180, lambda: c.home(n_rows=40))
     except Exception as exc:  # noqa
         kodiutils.notify('Could not load home: {0}'.format(exc))
         return kodiutils.end_directory(content='files')
-    kodiutils.add_directory('[B]Search[/B]', kodiutils.url_for(action='search'))
-    kodiutils.add_directory('[B]My List[/B]', kodiutils.url_for(action='mylist'))
-    kodiutils.add_directory('[B]Series & Movies[/B]', kodiutils.url_for(action='categories'))
-    kodiutils.add_directory('[B]Profiles[/B]', kodiutils.url_for(action='profiles'))
+    def _m(sid, default):
+        return '[B]{0}[/B]'.format(kodiutils.localize(sid, default))
+    kodiutils.add_directory(_m(30001, 'Search'), kodiutils.url_for(action='search'))
+    kodiutils.add_directory(_m(30002, 'My List'), kodiutils.url_for(action='mylist'))
+    kodiutils.add_directory(_m(30003, 'Series & Movies'), kodiutils.url_for(action='categories'))
+    kodiutils.add_directory(_m(30004, 'Profiles'), kodiutils.url_for(action='profiles'))
     for r in data['rows']:
         kodiutils.add_directory(
             r['title'],
             kodiutils.url_for(action='row', root=data['root'], index=str(r['index'])))
-    kodiutils.add_directory('Sign out', kodiutils.url_for(action='signout'))
+    kodiutils.add_directory(kodiutils.localize(30005, 'Sign out'), kodiutils.url_for(action='signout'))
     kodiutils.end_directory(content='files')
 
 
@@ -91,12 +94,12 @@ def switchprofile():
     kodiutils.end_directory()
 
 
-CATEGORIES = [('83', 'Series'), ('34399', 'Movies')]
+CATEGORIES = [('83', 30007, 'Series'), ('34399', 30008, 'Movies')]
 
 
 def categories():
-    for gid, name in CATEGORIES:
-        kodiutils.add_directory(name, kodiutils.url_for(action='genre', id=gid))
+    for gid, sid, name in CATEGORIES:
+        kodiutils.add_directory(kodiutils.localize(sid, name), kodiutils.url_for(action='genre', id=gid))
     kodiutils.end_directory(content='files')
 
 
