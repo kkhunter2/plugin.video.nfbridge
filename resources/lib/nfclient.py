@@ -151,6 +151,19 @@ class NetflixClient:
         except Exception as exc:  # noqa
             raise NetflixError(str(exc))
 
+    def _read_rows(self, root, n_rows):
+        j = self.falcor([['locos', root, {'from': 0, 'to': n_rows}, 'componentSummary']])
+        node = j.get('locos', {}).get(root, {})
+        rows = []
+        for idx, v in _digit_items(node):
+            cs = v.get('componentSummary')
+            if cs and cs.get('displayName'):
+                rows.append({'index': idx, 'title': _txt(cs.get('displayName')),
+                             'id': cs.get('id'), 'type': cs.get('type'),
+                             'context': cs.get('context')})
+        rows.sort(key=lambda r: r['index'])
+        return {'root': root, 'rows': rows}
+
     def home(self, n_rows=40):
         ctx = self.context()
         root = ctx.get('locoRoot')
@@ -163,17 +176,34 @@ class NetflixClient:
             root = ctx.get('locoRoot')
         if not root:
             raise NetflixError('no home root (sign in / select a profile)')
-        j = self.falcor([['locos', root, {'from': 0, 'to': n_rows}, 'componentSummary']])
-        node = j.get('locos', {}).get(root, {})
-        rows = []
-        for idx, v in _digit_items(node):
-            cs = v.get('componentSummary')
-            if cs and cs.get('displayName'):
-                rows.append({'index': idx, 'title': _txt(cs.get('displayName')),
-                             'id': cs.get('id'), 'type': cs.get('type'),
-                             'context': cs.get('context')})
-        rows.sort(key=lambda r: r['index'])
-        return {'root': root, 'rows': rows}
+        return self._read_rows(root, n_rows)
+
+    def genre(self, gid, n_rows=40):
+        """Rows of a genre/category page (e.g. 83=Series, 34399=Movies)."""
+        ctx = self._post('/genre', {'id': gid}, timeout=40) or {}
+        root = ctx.get('locoRoot')
+        if not root:
+            raise NetflixError('genre {0} did not load'.format(gid))
+        return self._read_rows(root, n_rows)
+
+    def row_by_list(self, list_id, n=40):
+        """A row's videos addressed by its list id (page-independent), with art."""
+        j = self.falcor([['lists', list_id, {'from': 0, 'to': n}, 'reference', 'summary']])
+        node = j.get('lists', {}).get(list_id, {})
+        ids, meta = [], {}
+        for _, cell in _digit_items(node):
+            path = (cell.get('reference') or {}).get('$__path') or []
+            vid = str(path[1]) if len(path) > 1 else None
+            if vid:
+                ids.append(vid)
+                meta[vid] = (cell['reference'].get('summary') or {})
+        if not ids:
+            return []
+        vj = self.falcor([['videos', vid, 'title'] for vid in ids]).get('videos', {})
+        artmap = self.art(ids)
+        return [{'id': vid, 'title': _txt(vj.get(vid, {}).get('title')),
+                 'type': meta[vid].get('type'), 'art': artmap.get(vid),
+                 'isOriginal': meta[vid].get('isOriginal')} for vid in ids]
 
     def row_videos(self, root, row_index, n=30):
         # step 1: resolve the row's video refs (id + type)

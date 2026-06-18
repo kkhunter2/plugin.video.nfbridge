@@ -279,6 +279,34 @@ def _switch_profile(window, index=0):
     return {'shown': True}
 
 
+def _genre(window, gid, timeout=25):
+    """Navigate to a genre/category page and return its LoCo root (rows are then read
+    by falcor like the home). Renders (restore) so the page prefetches, then minimizes."""
+    _restore(window)
+    try:
+        window.evaluate_js("location.assign('https://www.netflix.com/browse/genre/%s')" % str(gid))
+    except Exception:
+        pass
+    result = {}
+    for _ in range(timeout):
+        try:
+            ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
+            if ctx.get('locoRoot'):
+                result = ctx
+                break
+            url = window.evaluate_js('location.href') or ''
+            if '/account' in url:
+                window.evaluate_js("location.assign('https://www.netflix.com/browse/genre/%s')" % str(gid))
+        except Exception:
+            pass
+        time.sleep(1)
+    try:
+        window.minimize()
+    except Exception:
+        pass
+    return result
+
+
 def _go_home(window, timeout=30):
     """Navigate back to /browse (from search/play) and re-resolve the home root. The
     window must render for akira to prefetch the home LoCo, so un-minimize first, then
@@ -391,6 +419,8 @@ def _start_rpc(window, port):
                 send(self, 200, {'episodes': _episodes_get(window, req.get('videoId', ''))})
             elif self.path == '/home':
                 send(self, 200, _go_home(window))
+            elif self.path == '/genre':
+                send(self, 200, _genre(window, req.get('id', '')))
             elif self.path == '/switch':
                 send(self, 200, _switch_profile(window, req.get('index', 0)))
             elif self.path == '/eval':

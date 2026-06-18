@@ -2,7 +2,7 @@
 """Route handlers: render the Netflix browse (via the WebView-fetch daemon /
 nfclient) as Kodi directories, and Play by handing the title to the daemon's
 window (Layer 2)."""
-from resources.lib import kodiutils, player
+from resources.lib import kodiutils, player, cache
 
 
 def _client():
@@ -37,12 +37,13 @@ def home():
         kodiutils.notify('Sign in to Netflix to browse')
         return kodiutils.end_directory(content='files')
     try:
-        data = c.home(n_rows=40)
+        data = cache.cached('home', 180, lambda: c.home(n_rows=40))
     except Exception as exc:  # noqa
         kodiutils.notify('Could not load home: {0}'.format(exc))
         return kodiutils.end_directory(content='files')
     kodiutils.add_directory('[B]Search[/B]', kodiutils.url_for(action='search'))
     kodiutils.add_directory('[B]My List[/B]', kodiutils.url_for(action='mylist'))
+    kodiutils.add_directory('[B]Series & Movies[/B]', kodiutils.url_for(action='categories'))
     kodiutils.add_directory('[B]Profiles[/B]', kodiutils.url_for(action='profiles'))
     for r in data['rows']:
         kodiutils.add_directory(
@@ -60,7 +61,8 @@ def row():
     root_id = kodiutils.param('root')
     index = int(kodiutils.param('index') or '0')
     try:
-        vids = c.row_videos(root_id, index, n=40)
+        vids = cache.cached('row_{0}_{1}'.format(root_id[-12:], index), 300,
+                            lambda: c.row_videos(root_id, index, n=40))
     except Exception as exc:  # noqa
         kodiutils.notify('Could not load row: {0}'.format(exc))
         return kodiutils.end_directory()
@@ -84,8 +86,49 @@ def profiles():
 
 
 def switchprofile():
+    cache.clear()
     player.switch_profile(kodiutils.param('index') or '0')
     kodiutils.end_directory()
+
+
+CATEGORIES = [('83', 'Series'), ('34399', 'Movies')]
+
+
+def categories():
+    for gid, name in CATEGORIES:
+        kodiutils.add_directory(name, kodiutils.url_for(action='genre', id=gid))
+    kodiutils.end_directory(content='files')
+
+
+def genre():
+    c = _client()
+    if not c.ensure():
+        return kodiutils.end_directory()
+    gid = kodiutils.param('id')
+    try:
+        data = cache.cached('genre_{0}'.format(gid), 300, lambda: c.genre(gid))
+    except Exception as exc:  # noqa
+        kodiutils.notify('Could not load category: {0}'.format(exc))
+        return kodiutils.end_directory()
+    for r in data['rows']:
+        if r.get('id'):
+            kodiutils.add_directory(r['title'], kodiutils.url_for(action='rowlist', list=r['id']))
+    kodiutils.end_directory(content='files')
+
+
+def rowlist():
+    c = _client()
+    if not c.ready():
+        return kodiutils.end_directory()
+    lid = kodiutils.param('list')
+    try:
+        vids = cache.cached('list_{0}'.format(lid[-16:]), 300, lambda: c.row_by_list(lid, n=40))
+    except Exception as exc:  # noqa
+        kodiutils.notify('Could not load list: {0}'.format(exc))
+        return kodiutils.end_directory()
+    for v in vids:
+        _add_item(v)
+    kodiutils.end_directory(content='movies')
 
 
 def signin():
@@ -94,6 +137,7 @@ def signin():
 
 
 def signout():
+    cache.clear()
     kodiutils.notify('To sign out, use the account menu inside the Netflix window')
     kodiutils.end_directory()
 
@@ -112,7 +156,7 @@ def my_list():
     if not c.ensure():
         return kodiutils.end_directory()
     try:
-        items = c.my_list()
+        items = cache.cached('mylist', 120, c.my_list)
     except Exception as exc:  # noqa
         kodiutils.notify('Could not load My List: {0}'.format(exc))
         return kodiutils.end_directory()
