@@ -113,16 +113,34 @@ def _windows_launch_netflix_app(video_id):
 # Embedded = Microsoft Edge WebView2 (Windows): the system Edge engine is Netflix-
 # trusted, so it plays (incl. PlayReady SL3000 / 4K) in our own window, where we
 # inject the Kodi subtitle font + style. (An Electron embed is rejected by Netflix.)
+def _webview_cmd():
+    """Base command to run the WebView2 host: the bundled exe if present, else a
+    configured python + the host script. None if neither is available."""
+    exe = os.path.join(_runtime_dir(), 'webview', 'dist', 'nfbridge_player.exe')
+    if os.path.exists(exe):
+        return [exe]
+    py = kodiutils.setting('webview_python')
+    host = os.path.join(_runtime_dir(), 'webview', 'webview_host.py')
+    if py and os.path.exists(py) and os.path.exists(host):
+        return [py, host]
+    return None
+
+
+def _fontfix_cmd(base):
+    """How to invoke the font repairer given the webview base command."""
+    if base[0].lower().endswith('.exe'):
+        return base + ['fontfix']                       # `nfbridge_player.exe fontfix ...`
+    return [base[0], os.path.join(_runtime_dir(), 'webview', 'fontfix.py')]
+
+
 def _launch_embedded(video_id):
     url = WATCH_URL.format(video_id)
     if _platform() != 'windows':
         kodiutils.log('embedded (WebView2) is Windows-only; delegating')
         return _launch_delegate(video_id)
-
-    py = kodiutils.setting('webview_python')
-    host = os.path.join(_runtime_dir(), 'webview', 'webview_host.py')
-    if not py or not os.path.exists(py) or not os.path.exists(host):
-        kodiutils.log('embedded runtime not configured (webview_python); delegating')
+    cmd = _webview_cmd()
+    if not cmd:
+        kodiutils.log('embedded runtime not available; delegating')
         return _launch_delegate(video_id)
 
     env = {'NF_URL': url}
@@ -131,8 +149,8 @@ def _launch_embedded(video_id):
         env['NF_SESSION_OUT'] = session.path()   # refresh the browse session while playing
     except Exception:
         pass
-    _apply_kodi_subtitle_font(py, env)
-    return _spawn([py, host], env=env)
+    _apply_kodi_subtitle_font(cmd, env)
+    return _spawn(cmd, env=env)
 
 
 def launch_signin(session_out):
@@ -141,16 +159,15 @@ def launch_signin(session_out):
     if _platform() != 'windows':
         kodiutils.notify('Embedded sign-in needs Windows (WebView2)')
         return
-    py = kodiutils.setting('webview_python')
-    host = os.path.join(_runtime_dir(), 'webview', 'webview_host.py')
-    if not py or not os.path.exists(py) or not os.path.exists(host):
-        kodiutils.notify('Set "webview_python" in add-on settings first')
+    cmd = _webview_cmd()
+    if not cmd:
+        kodiutils.notify('Embedded runtime missing (build runtime/webview or set webview_python)')
         return
-    return _spawn([py, host], env={'NF_URL': 'https://www.netflix.com/browse',
-                                   'NF_SESSION_OUT': session_out})
+    return _spawn(cmd, env={'NF_URL': 'https://www.netflix.com/browse',
+                            'NF_SESSION_OUT': session_out})
 
 
-def _apply_kodi_subtitle_font(py, env):
+def _apply_kodi_subtitle_font(cmd, env):
     """Resolve Kodi's subtitle font + style and pre-repair the font (OTS) so the
     embedded player can render it. Notifies the user if the font is corrupt/unusable
     (then falls back to Netflix's own font)."""
@@ -165,18 +182,27 @@ def _apply_kodi_subtitle_font(py, env):
         return  # no Kodi subtitle font configured -> Netflix's own font
 
     cache = os.path.join(_runtime_dir(), 'webview', 'cache')
-    fontfix = os.path.join(_runtime_dir(), 'webview', 'fontfix.py')
+    if not os.path.isdir(cache):
+        os.makedirs(cache)
+    result_file = os.path.join(cache, 'fontfix_result.txt')
     try:
-        res = subprocess.run([py, fontfix, font, cache],
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90)
-        if res.returncode == 0 and res.stdout.strip():
-            env['NF_FONT_WOFF2'] = res.stdout.decode('utf-8', 'replace').strip()
+        os.remove(result_file)
+    except OSError:
+        pass
+    try:
+        # result is written to result_file (robust for the windowed exe; no stdout)
+        res = subprocess.run(_fontfix_cmd(cmd) + [font, cache, result_file],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+        out = ''
+        if os.path.exists(result_file):
+            out = open(result_file, encoding='utf-8').read().strip()
+        if res.returncode == 0 and out and not out.startswith('ERROR') and os.path.exists(out):
+            env['NF_FONT_WOFF2'] = out
             kodiutils.log('subtitle font ready: {0}'.format(os.path.basename(font)))
         else:
-            err = (res.stderr.decode('utf-8', 'replace').strip() or 'unknown error')
             kodiutils.notify('Subtitle font "{0}" is corrupt/unsupported - using Netflix font'
                              .format(os.path.basename(font)))
-            kodiutils.log('fontfix failed for {0}: {1}'.format(font, err))
+            kodiutils.log('fontfix failed for {0}: {1}'.format(font, out or 'rc=%s' % res.returncode))
     except Exception as exc:  # noqa
         kodiutils.notify('Could not process subtitle font - using Netflix font')
         kodiutils.log('fontfix exception: {0}'.format(exc))

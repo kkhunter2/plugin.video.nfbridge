@@ -34,9 +34,22 @@ Windows** (WebView2), delegate elsewhere.
 > `kodi_subs.py`) + colour/outline, injected with `!important` CSS. The font is
 > first OTS-repaired by `fontfix.py` (Chromium's sanitizer rejects some fonts that
 > Kodi/FreeType load — e.g. a malformed `post` table); if a font is too corrupt to
-> repair, the user is **notified** and Netflix's own font is used. Embedded needs a
-> Python with `pywebview`+`fonttools` (setting `webview_python`); if absent it falls
-> back to delegate automatically.
+> repair, the user is **notified** and Netflix's own font is used.
+>
+> **Runtime:** the embedded player is a self-contained `nfbridge_player.exe`
+> (`runtime/webview/`, built by `build_exe.py` — bundles Python + pywebview +
+> fonttools, ~18 MB) so no external Python is needed. Dual-purpose:
+> `nfbridge_player.exe` runs the player; `nfbridge_player.exe fontfix <src> <cache>
+> <result>` OTS-repairs a font. `player.py` auto-detects the exe (else a
+> `webview_python` + host script, else delegate mode).
+
+## Sign-in / session (Layer 1)
+The user signs in **once** in the embedded player window; the host extracts the
+shakti session (authURL, build, profile guid, cookies) from `netflix.reactContext`
++ pywebview `get_cookies()` into `session.json` (no browser-credential-store read).
+Layer 1 (`netflixapi`) loads it so browsing and playback share one login.
+*(The exact current falcor/GraphQL request format is still being tuned — the browse
+API is a moving target; session capture + plumbing are in place.)*
 
 ## Legitimacy
 No DRM circumvention, no key handling. Each user signs in to **their own** account;

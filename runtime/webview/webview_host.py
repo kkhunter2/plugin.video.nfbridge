@@ -20,6 +20,13 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fontfix  # noqa: E402
+
+# Dual-purpose binary: `<exe> fontfix <src> <cache>` repairs a font (OTS) and exits;
+# otherwise it runs the WebView2 Netflix player. Lets the addon do the synchronous
+# font pre-check (and notify on a corrupt font) without a separate Python.
+if len(sys.argv) >= 2 and sys.argv[1] == 'fontfix':
+    sys.exit(fontfix.main(['fontfix'] + sys.argv[2:]))
+
 import webview  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))

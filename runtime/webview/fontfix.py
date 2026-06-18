@@ -51,25 +51,37 @@ def woff2_base64(woff2_path):
 
 
 def main(argv):
-    """CLI: `fontfix.py <src_font> <cache_dir>`.
+    """CLI: `fontfix.py <src_font> <cache_dir> [result_file]`.
 
-    Prints the OTS-valid WOFF2 path on success (exit 0). On a font that cannot be
-    parsed/rebuilt (truly corrupt / unsupported), prints 'ERROR: <msg>' to stderr
-    and exits 2 — the caller can then notify the user and fall back.
+    Writes the OTS-valid WOFF2 path (or 'ERROR: <msg>') to result_file when given —
+    robust for a windowed/--noconsole exe where stdout is unreliable — else to
+    stdout/stderr. Exit 0 on success, 2 on a font that cannot be parsed/rebuilt.
     """
     import sys
     if len(argv) < 3:
-        sys.stderr.write('usage: fontfix.py <src_font> <cache_dir>\n')
+        sys.stderr.write('usage: fontfix <src_font> <cache_dir> [result_file]\n')
         return 2
     src, cache = argv[1], argv[2]
+    result_file = argv[3] if len(argv) > 3 else None
+
+    def emit(text):
+        if result_file:
+            try:
+                with open(result_file, 'w', encoding='utf-8') as fh:
+                    fh.write(text)
+            except Exception:
+                pass
+        else:
+            sys.stdout.write(text)
+
     if not os.path.isfile(src):
-        sys.stderr.write('ERROR: font not found: %s\n' % src)
+        emit('ERROR: font not found: %s' % src)
         return 2
     try:
-        out = to_web_woff2(src, cache)
-        sys.stdout.write(out)
+        emit(to_web_woff2(src, cache))
         return 0
     except Exception as exc:  # noqa
+        emit('ERROR: %s' % exc)
         sys.stderr.write('ERROR: %s\n' % exc)
         return 2
 

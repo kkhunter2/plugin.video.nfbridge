@@ -6,6 +6,9 @@ __pycache__/
 runtime/electron/
 runtime/player/node_modules/
 runtime/webview/cache/
+runtime/webview/build/
+runtime/webview/dist/
+*.spec
 
 # Per-user session material — never commit
 nf_cookies.json
