@@ -157,18 +157,18 @@ def _daemon_env():
 
 
 def switch_profile(index):
-    """Select a different Netflix profile: store the index and relaunch the daemon."""
-    kodiutils.set_setting('profile_index', str(index))
+    """Surface the 'Who's watching' gate so the user can pick a profile. Netflix blocks
+    programmatic switching, so a real click in the window is the reliable path."""
     from resources.lib import nfclient
-    c = nfclient.NetflixClient(port=DAEMON_PORT)
-    if c.running():
-        try:
-            c._get('/quit', timeout=5)
-        except Exception:
-            pass
-    import time
-    time.sleep(1)
-    _ensure_daemon()
+    c = nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon)
+    if not c.ensure():
+        kodiutils.notify('Netflix not ready')
+        return
+    try:
+        c._post('/switch', {'index': int(index)}, timeout=15)
+        kodiutils.notify('Pick a profile in the Netflix window, then reopen Browse')
+    except Exception as exc:  # noqa
+        kodiutils.log('switch profile failed: {0}'.format(exc))
 
 
 def _ensure_daemon():

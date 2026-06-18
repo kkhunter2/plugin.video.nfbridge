@@ -263,6 +263,22 @@ def _episodes_get(window, vid, timeout=20):
     return best
 
 
+def _switch_profile(window, index=0):
+    """Open the 'Who's watching' gate in the foreground for the user to pick a profile.
+
+    Netflix blocks programmatic profile switching (synthetic clicks don't trigger the
+    React handler and /SwitchProfile?tkn= does nothing on a direct navigation), so the
+    only reliable switch is a real user click. We surface the gate; the user clicks.
+    """
+    try:
+        window.evaluate_js("location.assign('https://www.netflix.com/ProfilesGate')")
+    except Exception:
+        pass
+    time.sleep(1)
+    _restore(window)   # bring the gate forward (ctypes SetForegroundWindow)
+    return {'shown': True}
+
+
 def _go_home(window, timeout=30):
     """Navigate back to /browse (from search/play) and re-resolve the home root. The
     window must render for akira to prefetch the home LoCo, so un-minimize first, then
@@ -375,6 +391,8 @@ def _start_rpc(window, port):
                 send(self, 200, {'episodes': _episodes_get(window, req.get('videoId', ''))})
             elif self.path == '/home':
                 send(self, 200, _go_home(window))
+            elif self.path == '/switch':
+                send(self, 200, _switch_profile(window, req.get('index', 0)))
             elif self.path == '/eval':
                 try:
                     send(self, 200, {'result': window.evaluate_js(req.get('js', ''))})

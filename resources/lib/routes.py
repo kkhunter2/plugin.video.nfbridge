@@ -83,10 +83,8 @@ def profiles():
 
 
 def switchprofile():
-    idx = kodiutils.param('index') or '0'
-    kodiutils.notify('Switching profile...')
-    player.switch_profile(idx)
-    home()
+    player.switch_profile(kodiutils.param('index') or '0')
+    kodiutils.end_directory()
 
 
 def signin():
