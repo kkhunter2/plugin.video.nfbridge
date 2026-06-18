@@ -148,11 +148,27 @@ def _daemon_env():
     env = {'NF_URL': 'https://www.netflix.com/browse',
            'NF_RPC_PORT': str(DAEMON_PORT),
            'NF_MINIMIZE_AFTER_LOAD': '1',   # load visible to prefetch, then minimize
-           'NF_PROFILE': _webview_profile()}
+           'NF_PROFILE': _webview_profile(),
+           'NF_PROFILE_INDEX': str(kodiutils.setting('profile_index', '0') or '0')}
     cmd = _webview_cmd()
     if cmd:
         _apply_kodi_subtitle_font(cmd, env)
     return env
+
+
+def switch_profile(index):
+    """Select a different Netflix profile: store the index and relaunch the daemon."""
+    kodiutils.set_setting('profile_index', str(index))
+    from resources.lib import nfclient
+    c = nfclient.NetflixClient(port=DAEMON_PORT)
+    if c.running():
+        try:
+            c._get('/quit', timeout=5)
+        except Exception:
+            pass
+    import time
+    time.sleep(1)
+    _ensure_daemon()
 
 
 def _ensure_daemon():

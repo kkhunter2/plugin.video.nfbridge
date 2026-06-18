@@ -43,13 +43,27 @@ Windows** (WebView2), delegate elsewhere.
 > <result>` OTS-repairs a font. `player.py` auto-detects the exe (else a
 > `webview_python` + host script, else delegate mode).
 
-## Sign-in / session (Layer 1)
-The user signs in **once** in the embedded player window; the host extracts the
-shakti session (authURL, build, profile guid, cookies) from `netflix.reactContext`
-+ pywebview `get_cookies()` into `session.json` (no browser-credential-store read).
-Layer 1 (`netflixapi`) loads it so browsing and playback share one login.
-*(The exact current falcor/GraphQL request format is still being tuned — the browse
-API is a moving target; session capture + plumbing are in place.)*
+## Browse (Layer 1) — the WebView-fetch daemon
+Netflix's browse data is **not** plain GraphQL and **not** in the page's static
+react context; it is served by falcor, and a raw `pathEvaluator` request returns 412
+even from inside the page (Netflix's client adds opaque `X-Netflix.*` headers). So
+instead of reimplementing the API, **one persistent WebView daemon** runs netflix.com
+and the addon proxies queries *through the page's own data client* over localhost
+(`netflix.appContext.state.pathEvaluator.get` for falcor; the Apollo cache for art /
+search / episodes). This needs no header reverse-engineering and survives Netflix
+changes. The daemon serves browse (hidden, after a visible prefetch) and playback
+(`/play` brings the window forward) from a single login.
+
+`resources/lib/nfclient.py` (pure-stdlib) calls the daemon:
+- `home()`  — LoCo rows (`["locos",root,{range},"componentSummary"]`)
+- `row_videos()` — a row's videos (title via falcor, **box art** from the Apollo cache)
+- `search()` — Netflix **Pinot** search results (Apollo)
+- `episodes()` — a show's episodes from the title page's Apollo cache
+- `profiles()` — profile list; the daemon auto-selects one at the "Who's watching" gate
+
+Daemon endpoints (`runtime/webview/webview_host.py`, `NF_RPC_PORT`): `/health`,
+`/context`, `/falcor`, `/art`, `/search`, `/episodes`, `/home`, `/play`, `/show`,
+`/quit`, `/eval`. Single sign-in: the user signs in once in the daemon window.
 
 ## Legitimacy
 No DRM circumvention, no key handling. Each user signs in to **their own** account;
@@ -57,24 +71,31 @@ playback runs in a client Netflix already trusts. Empirically validated:
 Edge issues a real SL3000 XMR license (4K); a castLabs Electron produces
 `encrypted_client_id` out‑of‑the‑box (Widevine privacy mode → Netflix accepts, 1080p).
 
-## Status — kickoff skeleton
+## Status
 - [x] Addon scaffold (`addon.xml`, `default.py`, router, settings)
-- [x] **Layer 2 playback delegation — functional** (platform detection + launchers)
-- [x] Layer 1 client structure with the real endpoints/paths + defensive parsers
-- [ ] **Session bootstrap** (`routes._load_auth`): cookies + build id + authURL + profile
-      guid — reuse the upstream addon's proven login flow. *Required before browse works.*
-- [ ] GraphQL persisted‑query op‑ids/SHA256 for search & episodes (v102)
-- [ ] Embedded runtime bundling (castLabs Electron + netflix‑web wrapper + subtitle module)
-- [ ] Subtitle re‑render module (libass‑wasm / JASSUB, synced to `video.currentTime`)
-- [ ] icon/fanart, localisation, Netflix app AppUserModelId resolution
+- [x] **Playback** — embedded WebView2 (4K + Kodi subtitle font) / delegate fallback
+- [x] **Self-contained runtime** (`nfbridge_player.exe`, no external Python)
+- [x] **Subtitle font** — Kodi `media/Fonts` font + OTS repair + user notification
+- [x] **Browse daemon** — home rows, **box art**, **search**, **episodes**, profiles
+- [x] **Single sign-in** in the daemon window; auto profile-select at the gate
+- [x] **Play** from Kodi → daemon surfaces the window and plays
+- [~] Profile switching — index selected at the gate; switching a *persisted* profile
+      is best-effort (account-menu flow varies by Netflix build)
+- [ ] macOS WKWebView host; Linux remains delegate
+- [ ] icon/fanart, localisation
 
 ## Files
 | file | role |
 |---|---|
 | `default.py` | entry point |
 | `resources/lib/router.py` | URL → handler dispatch |
-| `resources/lib/routes.py` | handlers → Kodi directories / external play |
-| `resources/lib/netflixapi.py` | Netflix browse API (Layer 1) |
-| `resources/lib/player.py` | playback delegation (Layer 2) |
+| `resources/lib/routes.py` | handlers → Kodi directories / play |
+| `resources/lib/nfclient.py` | browse client for the WebView-fetch daemon (Layer 1) |
+| `resources/lib/session.py` | captured browse session helper |
+| `resources/lib/player.py` | daemon lifecycle + playback (Layer 2) |
+| `resources/lib/kodi_subs.py` | Kodi subtitle font/style |
 | `resources/lib/kodiutils.py` | Kodi API helpers |
-| `resources/settings.xml` | playback mode + path overrides |
+| `runtime/webview/webview_host.py` | WebView2 daemon (browse RPC + playback) |
+| `runtime/webview/fontfix.py` | OTS font repair (CLI) |
+| `runtime/webview/build_exe.py` | PyInstaller build of the runtime exe |
+| `resources/settings.xml` | playback mode, profile index, path overrides |

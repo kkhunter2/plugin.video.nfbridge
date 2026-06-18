@@ -73,13 +73,20 @@ def profiles():
     if not c.ready():
         return kodiutils.end_directory()
     try:
-        for p in c.profiles():
-            # profile switching in the daemon is a TODO; for now just enter home
-            kodiutils.add_directory(p['name'], kodiutils.url_for(action='home'),
-                                    art={'icon': p.get('avatar')})
+        for i, p in enumerate(c.profiles()):
+            kodiutils.add_directory(
+                p['name'], kodiutils.url_for(action='switchprofile', index=str(i)),
+                art={'icon': p.get('avatar')})
     except Exception as exc:  # noqa
         kodiutils.notify(str(exc))
     kodiutils.end_directory(content='files')
+
+
+def switchprofile():
+    idx = kodiutils.param('index') or '0'
+    kodiutils.notify('Switching profile...')
+    player.switch_profile(idx)
+    home()
 
 
 def signin():

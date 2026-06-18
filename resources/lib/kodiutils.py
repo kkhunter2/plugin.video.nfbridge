@@ -56,6 +56,10 @@ def setting(key, default=''):
     return val if val != '' else default
 
 
+def set_setting(key, value):
+    ADDON.setSetting(key, str(value))
+
+
 def log(msg, level=xbmc.LOGINFO):
     xbmc.log('[{0}] {1}'.format(ADDON_ID, msg), level)
 

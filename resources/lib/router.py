@@ -37,6 +37,7 @@ def dispatch(base_url, handle, query):
         'play': routes.play,
         'signin': routes.signin,
         'signout': routes.signout,
+        'switchprofile': routes.switchprofile,
     }
     fn = table.get(action, routes.root)
     fn()

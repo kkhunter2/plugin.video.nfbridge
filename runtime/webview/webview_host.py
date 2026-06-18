@@ -352,6 +352,10 @@ def _start_rpc(window, port):
                     send(self, 200, {'ok': True})
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
+            elif self.path == '/quit':
+                # used to relaunch with a different profile index
+                send(self, 200, {'ok': True})
+                threading.Timer(0.3, lambda: os._exit(0)).start()
             else:
                 send(self, 404, {'err': 'not found'})
 

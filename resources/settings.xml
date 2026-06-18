@@ -3,13 +3,13 @@
   <section id="nfbridge">
     <category id="playback" label="Playback">
       <group id="1" label="Mode">
-        <setting id="playback_mode" type="string" label="Playback mode" help="How titles are played. 'Delegate' uses the OS's best Netflix client (4K on Windows via Edge/Netflix app). 'Embedded' uses a bundled VMP-signed player (1080p, integrated subtitles).">
+        <setting id="playback_mode" type="string" label="Playback mode" help="How titles are played. 'Embedded' plays in the bundled WebView2 window (up to 4K, Kodi subtitle font) on Windows. 'Delegate' hands off to the OS's Netflix client (Edge/app on Windows, Safari on macOS, Chrome on Linux).">
           <level>0</level>
-          <default>delegate</default>
+          <default>embedded</default>
           <constraints>
             <options>
-              <option label="Delegate to browser/app (required for Netflix; 4K on Windows)">delegate</option>
-              <option label="Embedded player (does NOT work for Netflix; other DRM services only)">embedded</option>
+              <option label="Embedded WebView2 (Windows; 4K + Kodi subtitle font)">embedded</option>
+              <option label="Delegate to browser/app">delegate</option>
             </options>
           </constraints>
           <control type="list" format="string"/>
@@ -37,6 +37,10 @@
         <setting id="webview_python" type="path" label="Python for the WebView2 host (needs pywebview + fonttools)" help="Path to a python.exe that has pywebview and fonttools installed; runs the embedded Edge WebView2 Netflix window. Leave empty to use Delegate mode.">
           <level>1</level><default></default>
           <control type="button" format="file"><heading>Select python.exe</heading></control>
+        </setting>
+        <setting id="profile_index" type="integer" label="Active Netflix profile (index)" help="Which profile the browse daemon selects (0 = first). Set it from the Profiles screen.">
+          <level>3</level><default>0</default>
+          <control type="edit" format="integer"><heading>Profile index</heading></control>
         </setting>
       </group>
     </category>
