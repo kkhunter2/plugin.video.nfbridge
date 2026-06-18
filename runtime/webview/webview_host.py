@@ -121,6 +121,103 @@ def _capture_session(window):
         return False
 
 
+# --------------------------------------------------------------- RPC daemon ---
+# When NF_RPC_PORT is set, run a localhost HTTP server that proxies falcor queries
+# THROUGH the page's own data client (netflix.appContext.state.pathEvaluator.get) —
+# so all X-Netflix headers / auth / CSRF are Netflix's own (no 412, future-proof).
+RPC_PORT = os.environ.get('NF_RPC_PORT')
+_rpc_lock = threading.Lock()
+_rpc_counter = [0]
+
+READY_JS = ('!!(window.netflix&&netflix.appContext&&netflix.appContext.state&&'
+            'netflix.appContext.state.pathEvaluator&&netflix.reactContext&&'
+            'netflix.reactContext.models.userInfo&&netflix.reactContext.models.userInfo.data.authURL)')
+
+# fresh page context: shakti session bits + the current LoCo (home) root id.
+CONTEXT_JS = ('(function(){try{var m=netflix.reactContext.models,ui=m.userInfo.data,sd=m.serverDefs.data;'
+              'var root=null;try{var lc=netflix.falcorCache&&netflix.falcorCache.locos;'
+              'if(lc){root=Object.keys(lc).filter(function(k){return k.indexOf("$")<0;})[0];}}catch(e){}'
+              'return JSON.stringify({authURL:ui.authURL,build:sd.BUILD_IDENTIFIER,guid:ui.guid,'
+              'country:ui.countryOfSignup,locoRoot:root});}catch(e){return JSON.stringify({err:String(e)});}})()')
+
+
+def _falcor_get(window, paths, timeout_s=20):
+    with _rpc_lock:
+        _rpc_counter[0] += 1
+        rid = 'r%d' % _rpc_counter[0]
+        start = ('window.__RPC=window.__RPC||{};window.__RPC["%s"]=null;try{'
+                 'var pe=netflix.appContext.state.pathEvaluator;'
+                 'pe.get.apply(pe,%s).then(function(r){window.__RPC["%s"]=JSON.stringify({ok:1,json:(r&&r.json)||null});},'
+                 'function(e){window.__RPC["%s"]=JSON.stringify({err:String((e&&e.message)||e)});});'
+                 '}catch(e){window.__RPC["%s"]=JSON.stringify({err:"throw:"+String(e)});}'
+                 % (rid, json.dumps(paths), rid, rid, rid))
+        try:
+            window.evaluate_js(start)
+        except Exception as exc:
+            return {'err': 'evaluate failed: %s' % exc}
+        for _ in range(int(timeout_s * 5)):
+            try:
+                v = window.evaluate_js('window.__RPC["%s"]' % rid)
+            except Exception:
+                v = None
+            if v:
+                try:
+                    window.evaluate_js('delete window.__RPC["%s"]' % rid)
+                except Exception:
+                    pass
+                try:
+                    return json.loads(v)
+                except Exception:
+                    return {'err': 'bad json'}
+            time.sleep(0.2)
+        return {'err': 'timeout'}
+
+
+def _start_rpc(window, port):
+    import http.server
+
+    def send(h, code, obj):
+        body = json.dumps(obj).encode('utf-8')
+        h.send_response(code)
+        h.send_header('Content-Type', 'application/json')
+        h.send_header('Content-Length', str(len(body)))
+        h.end_headers()
+        h.wfile.write(body)
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_GET(self):
+            if self.path == '/health':
+                try:
+                    ready = bool(window.evaluate_js(READY_JS))
+                except Exception:
+                    ready = False
+                send(self, 200, {'ready': ready})
+            elif self.path == '/context':
+                try:
+                    raw = window.evaluate_js(CONTEXT_JS)
+                    send(self, 200, json.loads(raw) if raw else {'err': 'no context'})
+                except Exception as exc:
+                    send(self, 200, {'err': str(exc)})
+            else:
+                send(self, 404, {'err': 'not found'})
+
+        def do_POST(self):
+            if self.path != '/falcor':
+                return send(self, 404, {'err': 'not found'})
+            try:
+                ln = int(self.headers.get('Content-Length', 0))
+                req = json.loads(self.rfile.read(ln) or b'{}')
+            except Exception as exc:
+                return send(self, 400, {'err': 'bad request: %s' % exc})
+            send(self, 200, _falcor_get(window, req.get('paths', []), req.get('timeout', 20)))
+
+    srv = http.server.HTTPServer(('127.0.0.1', int(port)), Handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+
 def injector(window):
     captured = False
     while True:
@@ -138,11 +235,17 @@ def injector(window):
 
 def on_start(window):
     threading.Thread(target=injector, args=(window,), daemon=True).start()
+    if RPC_PORT:
+        try:
+            _start_rpc(window, RPC_PORT)
+        except Exception as exc:
+            sys.stderr.write('rpc start failed: %s\n' % exc)
 
 
 if not os.path.isdir(CACHE):
     os.makedirs(CACHE)
 _profile = os.environ.get('NF_PROFILE') or os.path.join(CACHE, 'profile')
 _win = webview.create_window('Netflix', URL, width=1600, height=900,
+                             hidden=(os.environ.get('NF_HIDDEN') == '1'),
                              fullscreen=(os.environ.get('NF_FULLSCREEN') == '1'))
 webview.start(on_start, _win, private_mode=False, storage_path=_profile)
