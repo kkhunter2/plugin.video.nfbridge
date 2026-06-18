@@ -110,6 +110,9 @@ def _windows_launch_netflix_app(video_id):
 
 # ------------------------------------------------------------ embedded mode ---
 def _launch_embedded(video_id):
+    # NOTE: verified NOT to work for Netflix — Netflix rejects the castLabs Electron
+    # client (M7121/D7353/e100) despite a valid encrypted_client_id. Kept for other
+    # Widevine services / future use. For Netflix, use mode "delegate".
     url = WATCH_URL.format(video_id)
     electron = _first_existing([
         kodiutils.setting('electron_path'),
@@ -154,6 +157,9 @@ def play(video_id):
 
 
 def _default_mode():
-    # Windows defaults to delegate (4K); macOS/Linux default to embedded (no 4K to lose,
-    # gains the integrated experience + Kodi-grade subtitles).
-    return 'delegate' if _platform() == 'windows' else 'embedded'
+    # NETFLIX: only "delegate" works. Empirically, a bundled (castLabs) Electron is
+    # rejected by Netflix's license server (error M7121/D7353/e100) even though it
+    # produces a valid encrypted_client_id — Netflix validates the host's VMP-signature
+    # provenance and trusts only official browsers/apps. So default to delegate on every
+    # platform. (Embedded remains available for other, less-strict Widevine services.)
+    return 'delegate'

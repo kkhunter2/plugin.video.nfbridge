@@ -12,6 +12,14 @@ const fs = require('fs');
 
 app.commandLine.appendSwitch('enable-features', 'HardwareSecureDecryption');
 
+// Present as a Netflix-supported browser (Chrome). The default Electron UA carries
+// an "Electron/.." + app-name token that Netflix rejects as an unsupported browser
+// (error M7121). DRM still flows through the real Widevine CDM — this only changes
+// how the client identifies itself.
+const CHROME_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+                  '(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36';
+app.userAgentFallback = CHROME_UA;
+
 async function injectCookies() {
   const p = path.join(__dirname, 'nf_cookies.json');
   if (!fs.existsSync(p)) return;

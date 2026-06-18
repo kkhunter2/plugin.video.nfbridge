@@ -8,8 +8,8 @@
           <default>delegate</default>
           <constraints>
             <options>
-              <option label="Max quality (delegate to browser/app)">delegate</option>
-              <option label="Integrated (embedded player, custom subtitles)">embedded</option>
+              <option label="Delegate to browser/app (required for Netflix; 4K on Windows)">delegate</option>
+              <option label="Embedded player (does NOT work for Netflix; other DRM services only)">embedded</option>
             </options>
           </constraints>
           <control type="list" format="string"/>
