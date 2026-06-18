@@ -23,6 +23,7 @@ import subprocess
 from resources.lib import kodiutils
 
 WATCH_URL = 'https://www.netflix.com/watch/{0}'
+DAEMON_PORT = 8731   # localhost RPC port for the WebView browse+play daemon
 
 
 # ---------------------------------------------------------------- platform ----
@@ -133,38 +134,62 @@ def _fontfix_cmd(base):
     return [base[0], os.path.join(_runtime_dir(), 'webview', 'fontfix.py')]
 
 
-def _launch_embedded(video_id):
-    url = WATCH_URL.format(video_id)
-    if _platform() != 'windows':
-        kodiutils.log('embedded (WebView2) is Windows-only; delegating')
-        return _launch_delegate(video_id)
+# One persistent WebView daemon serves BOTH browse (hidden, falcor RPC) and playback
+# (/play navigates the same window to the watch page and shows it) — so there is a
+# single Netflix session/login and a single user-data-dir (WebView2 locks it per
+# process). nfclient connects over localhost; player.py owns the lifecycle.
+def _webview_profile():
+    return os.path.join(_runtime_dir(), 'webview', 'profile')
+
+
+def _daemon_env():
+    """Env for the browse+play daemon: hidden window, RPC, shared profile, and the
+    Kodi subtitle font ready for when playback shows the window."""
+    env = {'NF_URL': 'https://www.netflix.com/browse',
+           'NF_RPC_PORT': str(DAEMON_PORT),
+           'NF_MINIMIZE_AFTER_LOAD': '1',   # load visible to prefetch, then minimize
+           'NF_PROFILE': _webview_profile()}
+    cmd = _webview_cmd()
+    if cmd:
+        _apply_kodi_subtitle_font(cmd, env)
+    return env
+
+
+def _ensure_daemon():
+    """Launch the daemon (hidden) if the runtime exists. Used as nfclient's launcher."""
     cmd = _webview_cmd()
     if not cmd:
-        kodiutils.log('embedded runtime not available; delegating')
-        return _launch_delegate(video_id)
-
-    env = {'NF_URL': url}
-    try:
-        from resources.lib import session
-        env['NF_SESSION_OUT'] = session.path()   # refresh the browse session while playing
-    except Exception:
-        pass
-    _apply_kodi_subtitle_font(cmd, env)
-    return _spawn(cmd, env=env)
+        kodiutils.log('webview runtime not available (build runtime/webview or set webview_python)')
+        return
+    _spawn(cmd, env=_daemon_env())
 
 
-def launch_signin(session_out):
-    """Open the embedded WebView2 player so the user can sign in; the host captures
-    the browse session (cookies + authURL + build + profile) to session_out."""
+def browse_client():
+    """A NetflixClient wired to launch/connect the daemon."""
+    from resources.lib import nfclient
+    return nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon)
+
+
+def launch_signin(*_args):
+    """Bring up the daemon's window on the Netflix sign-in page."""
     if _platform() != 'windows':
         kodiutils.notify('Embedded sign-in needs Windows (WebView2)')
         return
-    cmd = _webview_cmd()
-    if not cmd:
-        kodiutils.notify('Embedded runtime missing (build runtime/webview or set webview_python)')
-        return
-    return _spawn(cmd, env={'NF_URL': 'https://www.netflix.com/browse',
-                            'NF_SESSION_OUT': session_out})
+    from resources.lib import nfclient
+    c = nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon)
+    if not c.running():
+        _ensure_daemon()
+        for _ in range(20):
+            if c.running():
+                break
+            import time
+            time.sleep(1)
+    try:
+        c._get('/show', timeout=10)
+        kodiutils.notify('Sign in to Netflix in the window, then return to Kodi')
+    except Exception as exc:  # noqa
+        kodiutils.notify('Could not open the sign-in window')
+        kodiutils.log('signin /show failed: {0}'.format(exc))
 
 
 def _apply_kodi_subtitle_font(cmd, env):
@@ -222,8 +247,8 @@ def play(video_id):
         return
     mode = kodiutils.setting('playback_mode', _default_mode())
     kodiutils.log('play {0} (mode={1}, platform={2})'.format(video_id, mode, _platform()))
-    if mode == 'embedded':
-        _launch_embedded(video_id)
+    if mode == 'embedded' and _platform() == 'windows' and _webview_cmd():
+        _play_embedded(video_id)
     else:
         _launch_delegate(video_id)
     # Tell Kodi we did NOT resolve a playable stream (playback is external),
@@ -234,6 +259,20 @@ def play(video_id):
         xbmcplugin.setResolvedUrl(kodiutils.handle(), False, xbmcgui.ListItem())
     except Exception:
         pass
+
+
+def _play_embedded(video_id):
+    """Tell the running daemon to navigate to the watch page and show its window."""
+    from resources.lib import nfclient
+    c = nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon)
+    if not c.ensure():
+        kodiutils.notify('Netflix not signed in - use "Sign in" first')
+        return
+    try:
+        c._post('/play', {'videoId': video_id})
+    except Exception as exc:  # noqa
+        kodiutils.log('play rpc failed: {0}; delegating'.format(exc))
+        _launch_delegate(video_id)
 
 
 def _default_mode():

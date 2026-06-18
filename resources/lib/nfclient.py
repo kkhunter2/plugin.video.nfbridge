@@ -8,6 +8,7 @@ working across Netflix changes. Pure stdlib (no xbmc) so it is unit-testable.
 """
 import json
 import time
+import socket
 
 try:
     from urllib.request import urlopen, Request
@@ -46,6 +47,7 @@ def _digit_items(node):
 
 class NetflixClient:
     def __init__(self, port=DEFAULT_PORT, launcher=None, ready_timeout=60):
+        self.port = port
         self.base = 'http://127.0.0.1:%d' % port
         self.launcher = launcher
         self.ready_timeout = ready_timeout
@@ -60,16 +62,30 @@ class NetflixClient:
         return json.loads(urlopen(req, timeout=timeout).read().decode('utf-8'))
 
     def ready(self):
+        """Daemon up AND the Netflix page signed-in / data client live."""
         try:
             return bool(self._get('/health', timeout=3).get('ready'))
         except Exception:
             return False
 
+    def running(self):
+        """Daemon process up (HTTP port open), regardless of sign-in state."""
+        s = socket.socket()
+        s.settimeout(1)
+        try:
+            s.connect(('127.0.0.1', self.port))
+            return True
+        except Exception:
+            return False
+        finally:
+            s.close()
+
     def ensure(self):
-        """Make sure the daemon is up (launch it if a launcher was given)."""
+        """Make sure the daemon is up and signed in. Launches it (once) if the
+        process isn't running, then waits for the page to be ready."""
         if self.ready():
             return True
-        if self.launcher:
+        if not self.running() and self.launcher:
             self.launcher()
         for _ in range(self.ready_timeout):
             if self.ready():

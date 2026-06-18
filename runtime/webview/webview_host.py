@@ -173,6 +173,26 @@ def _falcor_get(window, paths, timeout_s=20):
         return {'err': 'timeout'}
 
 
+def _restore(window):
+    """Un-minimize / un-hide and bring the window forward (pywebview-version safe)."""
+    for method in ('restore', 'show'):
+        try:
+            getattr(window, method)()
+        except Exception:
+            pass
+    # Windows: force the Netflix window to the foreground (pywebview restore alone may
+    # leave it minimized/behind when called from the RPC thread).
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        hwnd = u.FindWindowW(None, u'Netflix')
+        if hwnd:
+            u.ShowWindow(hwnd, 9)          # SW_RESTORE
+            u.SetForegroundWindow(hwnd)
+    except Exception:
+        pass
+
+
 def _start_rpc(window, port):
     import http.server
 
@@ -201,18 +221,41 @@ def _start_rpc(window, port):
                     send(self, 200, json.loads(raw) if raw else {'err': 'no context'})
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
+            elif self.path == '/show':
+                # bring the minimized/hidden browse window forward, e.g. for sign-in
+                try:
+                    window.load_url('https://www.netflix.com/login')
+                    _restore(window)
+                    send(self, 200, {'ok': True})
+                except Exception as exc:
+                    send(self, 200, {'err': str(exc)})
             else:
                 send(self, 404, {'err': 'not found'})
 
         def do_POST(self):
-            if self.path != '/falcor':
-                return send(self, 404, {'err': 'not found'})
             try:
                 ln = int(self.headers.get('Content-Length', 0))
                 req = json.loads(self.rfile.read(ln) or b'{}')
             except Exception as exc:
                 return send(self, 400, {'err': 'bad request: %s' % exc})
-            send(self, 200, _falcor_get(window, req.get('paths', []), req.get('timeout', 20)))
+            if self.path == '/falcor':
+                send(self, 200, _falcor_get(window, req.get('paths', []), req.get('timeout', 20)))
+            elif self.path == '/eval':
+                try:
+                    send(self, 200, {'result': window.evaluate_js(req.get('js', ''))})
+                except Exception as exc:
+                    send(self, 200, {'err': str(exc)})
+            elif self.path == '/play':
+                vid = req.get('videoId')
+                try:
+                    if vid:
+                        window.load_url('https://www.netflix.com/watch/%s' % vid)
+                    _restore(window)
+                    send(self, 200, {'ok': True})
+                except Exception as exc:
+                    send(self, 200, {'err': str(exc)})
+            else:
+                send(self, 404, {'err': 'not found'})
 
     srv = http.server.HTTPServer(('127.0.0.1', int(port)), Handler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
@@ -233,6 +276,33 @@ def injector(window):
         time.sleep(3)
 
 
+# If Netflix shows the "Who's watching?" profile gate there is no home LoCo; pick a
+# profile (NF_PROFILE_INDEX, default the first) so the home loads.
+PROFILE_INDEX = int(os.environ.get('NF_PROFILE_INDEX', '0') or '0')
+SELECT_PROFILE_JS = ('(function(idx){if(window.__PSEL)return "waiting";'
+                     'var els=document.querySelectorAll(".profile-link");'
+                     'if(els&&els.length){window.__PSEL=1;(els[idx]||els[0]).click();return "clicked";}'
+                     'return "none";})(%d)' % PROFILE_INDEX)
+
+
+def _auto_minimize(window):
+    # The akira UI only prefetches the home LoCo while the window renders, so we load
+    # it visible, (auto-pick a profile if gated,) wait until the home root is cached,
+    # then tuck the window away. falcor RPC keeps working minimized; /play, /show restore.
+    for _ in range(90):
+        try:
+            if window.evaluate_js(READY_JS):
+                ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
+                if ctx.get('locoRoot'):
+                    time.sleep(1)
+                    window.minimize()
+                    return
+                window.evaluate_js(SELECT_PROFILE_JS)  # likely on the profile gate
+        except Exception:
+            pass
+        time.sleep(1)
+
+
 def on_start(window):
     threading.Thread(target=injector, args=(window,), daemon=True).start()
     if RPC_PORT:
@@ -240,12 +310,18 @@ def on_start(window):
             _start_rpc(window, RPC_PORT)
         except Exception as exc:
             sys.stderr.write('rpc start failed: %s\n' % exc)
+    if os.environ.get('NF_MINIMIZE_AFTER_LOAD') == '1':
+        threading.Thread(target=_auto_minimize, args=(window,), daemon=True).start()
 
 
 if not os.path.isdir(CACHE):
     os.makedirs(CACHE)
 _profile = os.environ.get('NF_PROFILE') or os.path.join(CACHE, 'profile')
+# NOTE: a fully hidden window does not render, so the akira UI never prefetches the
+# home LoCo (no locoRoot). A *minimized* window renders (prefetch happens) but stays
+# out of the way; /play and /show restore it. Prefer minimized for the browse daemon.
 _win = webview.create_window('Netflix', URL, width=1600, height=900,
                              hidden=(os.environ.get('NF_HIDDEN') == '1'),
+                             minimized=(os.environ.get('NF_MINIMIZED') == '1'),
                              fullscreen=(os.environ.get('NF_FULLSCREEN') == '1'))
 webview.start(on_start, _win, private_mode=False, storage_path=_profile)

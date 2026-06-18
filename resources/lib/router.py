@@ -29,6 +29,7 @@ def dispatch(base_url, handle, query):
         'root': routes.root,
         'profiles': routes.profiles,
         'home': routes.home,
+        'row': routes.row,
         'list': routes.video_list,
         'mylist': routes.my_list,
         'search': routes.search,
