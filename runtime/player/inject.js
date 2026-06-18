@@ -1,82 +1,51 @@
 /*
- * inject.js — page-world controller (runs inside netflix.com).
+ * inject.js — page-world subtitle controller (runs inside netflix.com).
  *
- * 1. Hooks fetch/XHR to capture Netflix's (un-encrypted) TTML/VTT subtitle files.
- * 2. Finds the <video>, mounts the NFSubs overlay, starts the currentTime sync.
- * 3. Hides Netflix's own subtitle DOM so only our styled overlay shows.
+ * Netflix downloads/decodes subtitles off the main thread (Web Worker / MSE), so a
+ * page-level fetch hook can't see the TTML/VTT. But Netflix *renders* the active cue
+ * into a DOM node (.player-timedtext). So we MIRROR that already-rendered text into
+ * our own styled overlay (NFSubs) and hide Netflix's — robust, always in sync.
  *
- * Subtitle files are plain text (not DRM); we content-sniff responses rather than
- * relying on brittle URL patterns.
+ * Native subs are hidden via a persistent `!important` stylesheet (NOT by polling
+ * element.style, which races Netflix's re-render and flickers). opacity:0 (not
+ * display:none) keeps the node in layout so its innerText stays readable.
  */
 (function () {
   'use strict';
   if (!window.NFSubs) return;
 
-  var STYLE = window.NFSubs.DEFAULT_STYLE; // overridable via window.__NFSUBS_STYLE
+  var STYLE = window.__NFSUBS_STYLE || window.NFSubs.DEFAULT_STYLE;
+  var overlay = null;
 
-  function looksLikeSub(text) {
-    var head = (text || '').slice(0, 40);
-    if (/^\s*<\?xml/.test(head) && /ttml|<tt[\s>]/.test(text.slice(0, 400))) return 'ttml';
-    if (/^\s*<tt[\s>]/.test(head)) return 'ttml';
-    if (/^\s*WEBVTT/.test(head)) return 'vtt';
-    return null;
+  // hide Netflix's own subtitle rendering once, persistently
+  if (!document.getElementById('nfsubs-hide')) {
+    var st = document.createElement('style');
+    st.id = 'nfsubs-hide';
+    st.textContent = '.player-timedtext{opacity:0 !important;}';
+    (document.head || document.documentElement).appendChild(st);
   }
 
-  function ingest(text) {
-    try {
-      var kind = looksLikeSub(text);
-      if (!kind) return false;
-      var cues = kind === 'ttml' ? window.NFSubs.parseTTML(text) : window.NFSubs.parseVTT(text);
-      if (cues && cues.length) { window.NFSubs.setCues(cues); window.NFSubs.start(); return true; }
-    } catch (e) { /* ignore parse errors */ }
-    return false;
-  }
-
-  // ---- fetch hook ----
-  var _fetch = window.fetch;
-  window.fetch = function (input, init) {
-    var p = _fetch.apply(this, arguments);
-    try {
-      p.then(function (resp) {
-        var ct = (resp.headers && resp.headers.get && resp.headers.get('content-type')) || '';
-        if (/xml|ttml|vtt|text\/plain/.test(ct) || true) {
-          resp.clone().text().then(ingest).catch(function () {});
-        }
-      }).catch(function () {});
-    } catch (e) {}
-    return p;
-  };
-
-  // ---- XHR hook ----
-  var _open = XMLHttpRequest.prototype.open, _send = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.open = function () { return _open.apply(this, arguments); };
-  XMLHttpRequest.prototype.send = function () {
-    var xhr = this;
-    xhr.addEventListener('load', function () {
-      try { if (typeof xhr.responseText === 'string') ingest(xhr.responseText); } catch (e) {}
-    });
-    return _send.apply(this, arguments);
-  };
-
-  // ---- attach to the <video> + hide Netflix's own subs ----
-  function hideNativeSubs() {
-    document.querySelectorAll('.player-timedtext, [data-uia="player-timedtext"]').forEach(function (el) {
-      el.style.display = 'none';
-    });
-  }
-
-  var mounted = false;
-  var poll = setInterval(function () {
+  function ensureOverlay() {
     var v = document.querySelector('video');
-    if (v && !mounted) {
-      mounted = true;
-      window.NFSubs.mount(v, window.__NFSUBS_STYLE || STYLE);
-      window.NFSubs.start();
+    if (v && !overlay) {
+      window.NFSubs.mount(v, STYLE);                 // creates the styled #nfsubs-overlay box
+      overlay = document.getElementById('nfsubs-overlay');
     }
-    hideNativeSubs();
-  }, 1000);
+    return overlay;
+  }
 
-  new MutationObserver(hideNativeSubs).observe(document.documentElement, { childList: true, subtree: true });
+  function nativeNode() {
+    return document.querySelector('.player-timedtext-text-container') ||
+           document.querySelector('.player-timedtext');
+  }
 
-  window.addEventListener('beforeunload', function () { clearInterval(poll); });
+  function loop() {
+    var o = ensureOverlay();
+    if (!o) return;
+    var n = nativeNode();
+    var text = n ? (n.innerText || n.textContent || '').trim() : '';
+    if (o.__t !== text) { o.textContent = text; o.__t = text; }
+  }
+
+  setInterval(loop, 120);
 })();

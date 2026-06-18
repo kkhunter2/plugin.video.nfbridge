@@ -20,8 +20,23 @@ Layer 2  resources/lib/player.py       playback delegation — NO DRM code
                     integrated libass‑wasm subtitle overlay)
 ```
 
-`playback_mode` (setting) chooses delegate vs embedded; default is delegate on
-Windows (4K), embedded on macOS/Linux (no 4K to lose, gains integration + subs).
+`playback_mode` (setting) chooses delegate vs embedded; default is **embedded on
+Windows** (WebView2), delegate elsewhere.
+
+> **Embedded = Microsoft Edge WebView2 (Windows).** The system Edge engine is
+> Microsoft-signed and Netflix-trusted, so Netflix **plays in our own window, up to
+> 4K (PlayReady SL3000)** — verified (overlay ESN `NFCDIE`, 3840×2160). A bundled
+> *Electron* does NOT work (Netflix rejects it: M7121/D7353/e100 — VMP-signature
+> provenance), so embedded uses WebView2, not Electron.
+>
+> **Subtitles (embedded):** we keep Netflix's own subtitle text/timing/position and
+> only **swap the font to Kodi's configured subtitle font** (`media/Fonts`, via
+> `kodi_subs.py`) + colour/outline, injected with `!important` CSS. The font is
+> first OTS-repaired by `fontfix.py` (Chromium's sanitizer rejects some fonts that
+> Kodi/FreeType load — e.g. a malformed `post` table); if a font is too corrupt to
+> repair, the user is **notified** and Netflix's own font is used. Embedded needs a
+> Python with `pywebview`+`fonttools` (setting `webview_python`); if absent it falls
+> back to delegate automatically.
 
 ## Legitimacy
 No DRM circumvention, no key handling. Each user signs in to **their own** account;

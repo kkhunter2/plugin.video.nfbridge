@@ -33,14 +33,10 @@
           <control type="edit" format="string"/>
         </setting>
       </group>
-      <group id="3" label="Embedded player">
-        <setting id="electron_path" type="path" label="Electron executable (override)">
-          <level>2</level><default></default>
-          <control type="button" format="file"><heading>Select electron</heading></control>
-        </setting>
-        <setting id="runtime_dir" type="path" label="Runtime dir (bundled player + electron)">
-          <level>2</level><default></default>
-          <control type="button" format="directory"><heading>Select runtime dir</heading></control>
+      <group id="3" label="Embedded player (WebView2, Windows)">
+        <setting id="webview_python" type="path" label="Python for the WebView2 host (needs pywebview + fonttools)" help="Path to a python.exe that has pywebview and fonttools installed; runs the embedded Edge WebView2 Netflix window. Leave empty to use Delegate mode.">
+          <level>1</level><default></default>
+          <control type="button" format="file"><heading>Select python.exe</heading></control>
         </setting>
       </group>
     </category>

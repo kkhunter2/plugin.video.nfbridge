@@ -17,6 +17,7 @@ mode -> Netflix accepts at 1080p). See D:\\work\\netflix-*.md.
 """
 import os
 import sys
+import json
 import subprocess
 
 from resources.lib import kodiutils
@@ -109,30 +110,63 @@ def _windows_launch_netflix_app(video_id):
 
 
 # ------------------------------------------------------------ embedded mode ---
+# Embedded = Microsoft Edge WebView2 (Windows): the system Edge engine is Netflix-
+# trusted, so it plays (incl. PlayReady SL3000 / 4K) in our own window, where we
+# inject the Kodi subtitle font + style. (An Electron embed is rejected by Netflix.)
 def _launch_embedded(video_id):
-    # NOTE: verified NOT to work for Netflix — Netflix rejects the castLabs Electron
-    # client (M7121/D7353/e100) despite a valid encrypted_client_id. Kept for other
-    # Widevine services / future use. For Netflix, use mode "delegate".
     url = WATCH_URL.format(video_id)
-    electron = _first_existing([
-        kodiutils.setting('electron_path'),
-        os.path.join(_addon_runtime_dir(), 'electron',
-                     'electron.exe' if _platform() == 'windows' else 'electron'),
-    ])
-    if not electron:
-        kodiutils.notify('Embedded player not installed; switch to "delegate" mode in settings')
+    if _platform() != 'windows':
+        kodiutils.log('embedded (WebView2) is Windows-only; delegating')
+        return _launch_delegate(video_id)
+
+    py = kodiutils.setting('webview_python')
+    host = os.path.join(_runtime_dir(), 'webview', 'webview_host.py')
+    if not py or not os.path.exists(py) or not os.path.exists(host):
+        kodiutils.log('embedded runtime not configured (webview_python); delegating')
+        return _launch_delegate(video_id)
+
+    env = {'NF_URL': url}
+    _apply_kodi_subtitle_font(py, env)
+    return _spawn([py, host], env=env)
+
+
+def _apply_kodi_subtitle_font(py, env):
+    """Resolve Kodi's subtitle font + style and pre-repair the font (OTS) so the
+    embedded player can render it. Notifies the user if the font is corrupt/unusable
+    (then falls back to Netflix's own font)."""
+    try:
+        from resources.lib import kodi_subs
+        env['NF_STYLE'] = json.dumps(kodi_subs.style())
+        font = kodi_subs.resolve_font_path()
+    except Exception as exc:  # noqa
+        kodiutils.log('subtitle settings read failed: {0}'.format(exc))
         return
-    app_dir = os.path.join(_addon_runtime_dir(), 'player')  # the netflix-web wrapper + subtitle module
-    # NF_URL is read by the wrapper's main.js to load the watch page directly.
-    return _spawn([electron, app_dir], env={'NF_URL': url})
+    if not font:
+        return  # no Kodi subtitle font configured -> Netflix's own font
+
+    cache = os.path.join(_runtime_dir(), 'webview', 'cache')
+    fontfix = os.path.join(_runtime_dir(), 'webview', 'fontfix.py')
+    try:
+        res = subprocess.run([py, fontfix, font, cache],
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=90)
+        if res.returncode == 0 and res.stdout.strip():
+            env['NF_FONT_WOFF2'] = res.stdout.decode('utf-8', 'replace').strip()
+            kodiutils.log('subtitle font ready: {0}'.format(os.path.basename(font)))
+        else:
+            err = (res.stderr.decode('utf-8', 'replace').strip() or 'unknown error')
+            kodiutils.notify('Subtitle font "{0}" is corrupt/unsupported - using Netflix font'
+                             .format(os.path.basename(font)))
+            kodiutils.log('fontfix failed for {0}: {1}'.format(font, err))
+    except Exception as exc:  # noqa
+        kodiutils.notify('Could not process subtitle font - using Netflix font')
+        kodiutils.log('fontfix exception: {0}'.format(exc))
 
 
-def _addon_runtime_dir():
-    """Where the bundled Electron + player wrapper live (downloaded on first use)."""
-    base = kodiutils.setting('runtime_dir')
-    if base:
-        return base
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'runtime')
+def _runtime_dir():
+    # resources/lib/player.py -> addon root -> runtime/
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        'runtime')
 
 
 # ------------------------------------------------------------------- entry ----
@@ -157,9 +191,8 @@ def play(video_id):
 
 
 def _default_mode():
-    # NETFLIX: only "delegate" works. Empirically, a bundled (castLabs) Electron is
-    # rejected by Netflix's license server (error M7121/D7353/e100) even though it
-    # produces a valid encrypted_client_id — Netflix validates the host's VMP-signature
-    # provenance and trusts only official browsers/apps. So default to delegate on every
-    # platform. (Embedded remains available for other, less-strict Widevine services.)
-    return 'delegate'
+    # Windows: embedded WebView2 plays Netflix (up to 4K via PlayReady SL3000) inside
+    # our own window AND lets us apply the Kodi subtitle font/style — so it's the best
+    # mode there (when the webview runtime is configured; otherwise it falls back to
+    # delegate automatically). Other OSes have no Netflix-trusted embeddable -> delegate.
+    return 'embedded' if _platform() == 'windows' else 'delegate'
