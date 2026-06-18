@@ -173,6 +173,24 @@ def _falcor_get(window, paths, timeout_s=20):
         return {'err': 'timeout'}
 
 
+def _art_get(window, ids):
+    """Box art for video ids, read from the page's Apollo (GraphQL) cache — that is
+    where Netflix keeps artwork (falcor has none). Cache read only (no fetch), so it
+    covers videos the home has already rendered."""
+    js = ('(function(ids){try{var c=netflix.appContext.state.graphqlClient.cache.extract();var out={};'
+          'ids.forEach(function(id){var ek=null;["Movie","Show","Episode","Supplemental"].forEach(function(t){'
+          'var k=t+\':{"videoId":\'+id+\'}\';if(c[k]&&!ek)ek=k;});if(!ek)return;var e=c[ek],url=null;'
+          'Object.keys(e).forEach(function(f){if(url)return;'
+          'if(f.indexOf("artwork")>=0&&f.indexOf(\'"SDP"\')>=0){try{var v=e[f];if(v&&v.url)url=v.url;}catch(_){}}});'
+          'if(url)out[String(id)]=url;});return JSON.stringify(out);}catch(e){return "{}";}})(%s)'
+          % json.dumps([str(i) for i in ids]))
+    try:
+        raw = window.evaluate_js(js)
+        return json.loads(raw) if raw else {}
+    except Exception:
+        return {}
+
+
 def _restore(window):
     """Un-minimize / un-hide and bring the window forward (pywebview-version safe)."""
     for method in ('restore', 'show'):
@@ -240,6 +258,8 @@ def _start_rpc(window, port):
                 return send(self, 400, {'err': 'bad request: %s' % exc})
             if self.path == '/falcor':
                 send(self, 200, _falcor_get(window, req.get('paths', []), req.get('timeout', 20)))
+            elif self.path == '/art':
+                send(self, 200, _art_get(window, req.get('ids', [])))
             elif self.path == '/eval':
                 try:
                     send(self, 200, {'result': window.evaluate_js(req.get('js', ''))})

@@ -102,6 +102,15 @@ class NetflixClient:
             raise NetflixError(r['err'])
         return r.get('json') or {}
 
+    def art(self, ids):
+        """Box art for video ids, read from the page's Apollo cache (best-effort)."""
+        if not ids:
+            return {}
+        try:
+            return self._post('/art', {'ids': list(ids)}) or {}
+        except Exception:
+            return {}
+
     # ---- browse ----
     def profiles(self):
         j = self.falcor([['profilesList', {'from': 0, 'to': 20}, ['summary']]])
@@ -144,14 +153,14 @@ class NetflixClient:
                 meta[vid] = (cell['reference'].get('summary') or {})
         if not ids:
             return []
-        # step 2: titles in one batch (reliable via falcor). NOTE: box art is NOT
-        # fetchable via falcor for non-prefetched videos (server-fetch is rejected) —
-        # Netflix serves art through GraphQL (the MiniModalQuery op). TODO: art via the
-        # page's graphqlClient. For now title + type + id drive browse/playback.
+        # step 2: titles in one batch (falcor) + box art from the Apollo cache
+        # (/art). Art is read-only from cache, so it is present for videos the home
+        # has rendered and None otherwise.
         vj = self.falcor([['videos', vid, 'title'] for vid in ids]).get('videos', {})
+        artmap = self.art(ids)
         out = []
         for vid in ids:
             out.append({'id': vid, 'title': _txt(vj.get(vid, {}).get('title')),
-                        'type': meta[vid].get('type'), 'art': None,
+                        'type': meta[vid].get('type'), 'art': artmap.get(vid),
                         'isOriginal': meta[vid].get('isOriginal')})
         return out
