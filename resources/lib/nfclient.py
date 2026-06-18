@@ -122,11 +122,28 @@ class NetflixClient:
                             'kids': s.get('isKids'), 'avatar': s.get('avatarName')})
         return out
 
+    def search(self, q):
+        """Search results [{id,type,title,art}] from Netflix's Pinot search (Apollo).
+        Navigates the daemon to the search page; call home() to return to browse."""
+        if not q:
+            return []
+        try:
+            return (self._post('/search', {'q': q}, timeout=45) or {}).get('results', [])
+        except Exception as exc:  # noqa
+            raise NetflixError(str(exc))
+
     def home(self, n_rows=40):
         ctx = self.context()
         root = ctx.get('locoRoot')
         if not root:
-            raise NetflixError('no locoRoot in context: %s' % ctx)
+            # daemon may be on the search/watch page or the profile gate -> go home
+            try:
+                ctx = self._post('/home', {}, timeout=40) or {}
+            except Exception:
+                ctx = {}
+            root = ctx.get('locoRoot')
+        if not root:
+            raise NetflixError('no home root (sign in / select a profile)')
         j = self.falcor([['locos', root, {'from': 0, 'to': n_rows}, 'componentSummary']])
         node = j.get('locos', {}).get(root, {})
         rows = []

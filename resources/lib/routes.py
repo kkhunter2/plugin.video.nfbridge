@@ -25,6 +25,7 @@ def home():
     except Exception as exc:  # noqa
         kodiutils.notify('Could not load home: {0}'.format(exc))
         return kodiutils.end_directory(content='files')
+    kodiutils.add_directory('[B]Search[/B]', kodiutils.url_for(action='search'))
     kodiutils.add_directory('[B]Profiles[/B]', kodiutils.url_for(action='profiles'))
     for r in data['rows']:
         kodiutils.add_directory(
@@ -98,8 +99,28 @@ def my_list():
 
 
 def search():
-    kodiutils.notify('Search is coming soon')
-    kodiutils.end_directory()
+    c = _client()
+    if not c.ensure():
+        return kodiutils.end_directory()
+    q = kodiutils.prompt()
+    if not q:
+        return kodiutils.end_directory()
+    try:
+        results = c.search(q)
+    except Exception as exc:  # noqa
+        kodiutils.notify('Search failed: {0}'.format(exc))
+        return kodiutils.end_directory()
+    for v in results:
+        if not v.get('id'):
+            continue
+        mediatype = 'tvshow' if v.get('type') == 'show' else 'movie'
+        kodiutils.add_directory(
+            v['title'] or v['id'],
+            kodiutils.url_for(action='play', id=v['id']),
+            art={'thumb': v.get('art'), 'poster': v.get('art')},
+            info={'title': v['title'], 'mediatype': mediatype},
+            is_folder=False, playable=True)
+    kodiutils.end_directory(content='movies')
 
 
 def show():

@@ -191,6 +191,70 @@ def _art_get(window, ids):
         return {}
 
 
+SEARCH_EXTRACT_JS = (
+    '(function(){try{var c=netflix.appContext.state.graphqlClient.cache.extract();'
+    'var gk=Object.keys(c).filter(function(x){return /^PinotGallerySection/.test(x);})[0];'
+    'if(!gk)return "[]";var g=c[gk];'
+    'var ek=Object.keys(g).filter(function(x){return x.indexOf("entities")>=0;})[0];'
+    'var edges=((g[ek]||{}).edges)||[];var out=[];'
+    'edges.forEach(function(ed){var n=ed.node||{};var ue=((n.unifiedEntity||{}).__ref)||"";'
+    'var m=ue.match(/^(Movie|Show|Episode):\\{"videoId":(\\d+)\\}/);if(!m)return;'
+    'var art=null;var ar=(n.contextualArtwork||{}).__ref;if(ar&&c[ar]){var ae=c[ar];'
+    'Object.keys(ae).forEach(function(f){if(art)return;try{if(ae[f]&&ae[f].url)art=ae[f].url;}catch(_){}});}'
+    'out.push({id:m[2],type:m[1].toLowerCase(),title:n.displayString,art:art});});'
+    'return JSON.stringify(out);}catch(e){return "[]";}})()')
+
+
+def _search_get(window, q, timeout=15):
+    try:
+        window.evaluate_js("location.assign('https://www.netflix.com/search?q='+encodeURIComponent(%s))"
+                           % json.dumps(q))
+    except Exception:
+        pass
+    for _ in range(timeout * 2):
+        try:
+            arr = json.loads(window.evaluate_js(SEARCH_EXTRACT_JS) or '[]')
+            if arr:
+                return arr
+        except Exception:
+            pass
+        time.sleep(0.5)
+    return []
+
+
+def _go_home(window, timeout=30):
+    """Navigate back to /browse (from search/play) and re-resolve the home root. The
+    window must render for akira to prefetch the home LoCo, so un-minimize first, then
+    tuck it away again once home is ready."""
+    try:
+        window.restore()   # un-minimize (no foreground steal) so akira renders
+    except Exception:
+        pass
+    result = {}
+    for _t in range(timeout):
+        try:
+            ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
+            if ctx.get('locoRoot'):
+                result = ctx
+                break
+            url = window.evaluate_js('location.href') or ''
+            on_browse = '/browse' in url
+            if not on_browse or _t % 6 == 0:
+                # (re)navigate; Netflix sometimes bounces /browse -> /account mid-session
+                window.evaluate_js("window.__PSEL=0;location.assign('https://www.netflix.com/browse');")
+            else:
+                window.evaluate_js('(function(){try{var e=document.querySelectorAll(".profile-link");'
+                                   'if(e.length)e[0].click();}catch(x){}})()')
+        except Exception:
+            pass
+        time.sleep(1)
+    try:
+        window.minimize()
+    except Exception:
+        pass
+    return result
+
+
 def _restore(window):
     """Un-minimize / un-hide and bring the window forward (pywebview-version safe)."""
     for method in ('restore', 'show'):
@@ -260,6 +324,10 @@ def _start_rpc(window, port):
                 send(self, 200, _falcor_get(window, req.get('paths', []), req.get('timeout', 20)))
             elif self.path == '/art':
                 send(self, 200, _art_get(window, req.get('ids', [])))
+            elif self.path == '/search':
+                send(self, 200, {'results': _search_get(window, req.get('q', ''))})
+            elif self.path == '/home':
+                send(self, 200, _go_home(window))
             elif self.path == '/eval':
                 try:
                     send(self, 200, {'result': window.evaluate_js(req.get('js', ''))})
