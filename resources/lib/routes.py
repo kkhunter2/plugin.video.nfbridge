@@ -9,6 +9,22 @@ def _client():
     return player.browse_client()
 
 
+def _add_item(v):
+    """Render a video: a show -> folder (episode list); a movie -> playable."""
+    if not v.get('id'):
+        return
+    art = {'thumb': v.get('art'), 'poster': v.get('art')}
+    if v.get('type') == 'show':
+        kodiutils.add_directory(
+            v['title'] or v['id'], kodiutils.url_for(action='show', id=v['id']),
+            art=art, info={'title': v['title'], 'mediatype': 'tvshow'}, is_folder=True)
+    else:
+        kodiutils.add_directory(
+            v['title'] or v['id'], kodiutils.url_for(action='play', id=v['id']),
+            art=art, info={'title': v['title'], 'mediatype': 'movie'},
+            is_folder=False, playable=True)
+
+
 # ---------------------------------------------------------------- routes ------
 def root():
     home()
@@ -48,15 +64,7 @@ def row():
         kodiutils.notify('Could not load row: {0}'.format(exc))
         return kodiutils.end_directory()
     for v in vids:
-        if not v.get('id'):
-            continue
-        mediatype = 'tvshow' if v.get('type') == 'show' else 'movie'
-        kodiutils.add_directory(
-            v['title'] or v['id'],
-            kodiutils.url_for(action='play', id=v['id']),
-            art={'thumb': v.get('art'), 'poster': v.get('art')},
-            info={'title': v['title'], 'mediatype': mediatype},
-            is_folder=False, playable=True)
+        _add_item(v)
     kodiutils.end_directory(content='movies')
 
 
@@ -111,18 +119,32 @@ def search():
         kodiutils.notify('Search failed: {0}'.format(exc))
         return kodiutils.end_directory()
     for v in results:
-        if not v.get('id'):
-            continue
-        mediatype = 'tvshow' if v.get('type') == 'show' else 'movie'
-        kodiutils.add_directory(
-            v['title'] or v['id'],
-            kodiutils.url_for(action='play', id=v['id']),
-            art={'thumb': v.get('art'), 'poster': v.get('art')},
-            info={'title': v['title'], 'mediatype': mediatype},
-            is_folder=False, playable=True)
+        _add_item(v)
     kodiutils.end_directory(content='movies')
 
 
 def show():
-    # Episodes need the GraphQL path; for now Netflix /watch/<id> resumes the show.
-    play()
+    c = _client()
+    if not c.ready():
+        return kodiutils.end_directory()
+    sid = kodiutils.param('id')
+    try:
+        eps = c.episodes(sid)
+    except Exception as exc:  # noqa
+        kodiutils.notify('Could not load episodes: {0}'.format(exc))
+        return kodiutils.end_directory()
+    if not eps:
+        return player.play(sid)   # no episode list -> just play the title
+    for e in eps:
+        title = e.get('title') or e['id']
+        if e.get('season') and e.get('number'):
+            label = 'S{0}E{1}  {2}'.format(e['season'], e['number'], title)
+        elif e.get('number'):
+            label = 'E{0}  {1}'.format(e['number'], title)
+        else:
+            label = title
+        info = {'title': e.get('title'), 'mediatype': 'episode'}
+        kodiutils.add_directory(
+            label, kodiutils.url_for(action='play', id=e['id']),
+            art={'thumb': e.get('art')}, info=info, is_folder=False, playable=True)
+    kodiutils.end_directory(content='episodes')

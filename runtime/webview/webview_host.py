@@ -222,6 +222,47 @@ def _search_get(window, q, timeout=15):
     return []
 
 
+EPISODES_EXTRACT_JS = (
+    '(function(){try{var c=netflix.appContext.state.graphqlClient.cache.extract();var out=[];'
+    'Object.keys(c).forEach(function(k){var m=k.match(/^Episode:\\{"videoId":(\\d+)\\}/);if(!m)return;'
+    'var e=c[k];var snum=null;var ps=(e.parentSeason||{}).__ref;if(ps&&c[ps])snum=c[ps].number;'
+    'var art=null;Object.keys(e).forEach(function(f){if(art)return;'
+    'if(f.indexOf("artwork")>=0&&f.indexOf("342")>=0){try{if(e[f]&&e[f].url)art=e[f].url;}catch(_){}}});'
+    'out.push({id:m[1],title:e.title,number:e.number,season:snum,art:art,'
+    'runtime:e.runtimeSec||e.displayRuntimeSec});});'
+    'out.sort(function(a,b){return ((a.season||0)-(b.season||0))||((a.number||0)-(b.number||0));});'
+    'return JSON.stringify(out);}catch(e){return "[]";}})()')
+
+
+def _episodes_get(window, vid, timeout=20):
+    try:
+        window.restore()   # render so the episode list loads (minimized loads only 1)
+    except Exception:
+        pass
+    try:
+        window.evaluate_js("location.assign('https://www.netflix.com/title/%s')" % str(vid))
+    except Exception:
+        pass
+    best, stable = [], 0
+    for _ in range(timeout * 2):
+        try:
+            arr = json.loads(window.evaluate_js(EPISODES_EXTRACT_JS) or '[]')
+            if len(arr) > len(best):
+                best, stable = arr, 0
+            elif arr:
+                stable += 1
+                if stable >= 6:   # ~3s with no new episodes -> settled
+                    break
+        except Exception:
+            pass
+        time.sleep(0.5)
+    try:
+        window.minimize()
+    except Exception:
+        pass
+    return best
+
+
 def _go_home(window, timeout=30):
     """Navigate back to /browse (from search/play) and re-resolve the home root. The
     window must render for akira to prefetch the home LoCo, so un-minimize first, then
@@ -326,6 +367,8 @@ def _start_rpc(window, port):
                 send(self, 200, _art_get(window, req.get('ids', [])))
             elif self.path == '/search':
                 send(self, 200, {'results': _search_get(window, req.get('q', ''))})
+            elif self.path == '/episodes':
+                send(self, 200, {'episodes': _episodes_get(window, req.get('videoId', ''))})
             elif self.path == '/home':
                 send(self, 200, _go_home(window))
             elif self.path == '/eval':
