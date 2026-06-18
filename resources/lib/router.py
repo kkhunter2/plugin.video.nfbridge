@@ -34,6 +34,8 @@ def dispatch(base_url, handle, query):
         'search': routes.search,
         'show': routes.show,
         'play': routes.play,
+        'signin': routes.signin,
+        'signout': routes.signout,
     }
     fn = table.get(action, routes.root)
     fn()

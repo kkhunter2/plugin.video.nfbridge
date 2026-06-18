@@ -28,9 +28,13 @@ def _session():
 
 
 def _load_auth():
-    """TODO: return {'cookies': [...], 'build': ..., 'auth_url': ..., 'profile_guid': ...}
-    from the addon's persisted login. Returns None until sign-in is wired."""
-    return None
+    """Map the captured WebView session -> netflixapi.Session.bootstrap kwargs."""
+    from resources.lib import session
+    s = session.load()
+    if not s:
+        return None
+    return {'cookies': s.get('cookies', []), 'build': s.get('build'),
+            'auth_url': s.get('authURL'), 'profile_guid': s.get('guid')}
 
 
 def _require_session():
@@ -43,11 +47,28 @@ def _require_session():
 
 # ---------------------------------------------------------------- routes ------
 def root():
-    profile = kodiutils.param('profile')
-    if profile:
+    from resources.lib import session
+    if not session.is_signed_in():
+        kodiutils.add_directory('[B]Sign in to Netflix[/B]', kodiutils.url_for(action='signin'))
+        return kodiutils.end_directory(content='files')
+    if kodiutils.param('profile'):
         home()
     else:
         profiles()
+
+
+def signin():
+    from resources.lib import session, player
+    player.launch_signin(session.path())
+    kodiutils.notify('Sign in to Netflix in the player window, then reopen the addon')
+    kodiutils.end_directory()
+
+
+def signout():
+    from resources.lib import session
+    session.clear()
+    kodiutils.notify('Signed out')
+    kodiutils.end_directory()
 
 
 def profiles():
@@ -72,6 +93,7 @@ def home():
     kodiutils.add_directory('[B]My List[/B]', kodiutils.url_for(action='mylist'))
     kodiutils.add_directory('[B]Search[/B]', kodiutils.url_for(action='search'))
     kodiutils.add_directory('[B]Genres[/B]', kodiutils.url_for(action='home', genres='1'))
+    kodiutils.add_directory('Sign out', kodiutils.url_for(action='signout'))
     try:
         rows = s.genres_all() if kodiutils.param('genres') else s.home()
         for row in rows:

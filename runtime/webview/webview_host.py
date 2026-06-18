@@ -76,13 +76,54 @@ STYLE_JS = ('if(!document.getElementById("nf-subfont")){var s=document.createEle
             '(document.head||document.documentElement).appendChild(s);}') if _CSS else ''
 
 
+SESSION_OUT = os.environ.get('NF_SESSION_OUT')
+# Netflix exposes the shakti session in the page's react context once signed in.
+EXTRACT_JS = ('(function(){try{var m=window.netflix&&netflix.reactContext&&netflix.reactContext.models;'
+              'if(!m)return null;var ui=(m.userInfo&&m.userInfo.data)||{};'
+              'var sd=(m.serverDefs&&m.serverDefs.data)||{};'
+              'if(!ui.authURL||!sd.BUILD_IDENTIFIER)return null;'
+              'return JSON.stringify({authURL:ui.authURL,build:sd.BUILD_IDENTIFIER,'
+              'guid:ui.guid,country:ui.countryOfSignup,membership:ui.membershipStatus,'
+              'gpsModel:sd.gpsModel});}catch(e){return null;}})()')
+
+
+def _capture_session(window):
+    try:
+        raw = window.evaluate_js(EXTRACT_JS)
+        if not raw or raw == 'null':
+            return False
+        data = json.loads(raw)
+        # live-session cookies via pywebview (not a credential-store read)
+        cookies = []
+        try:
+            for c in (window.get_cookies() or []):
+                try:
+                    for name, morsel in c.items():
+                        cookies.append({'name': name, 'value': morsel.value,
+                                        'domain': morsel.get('domain', '.netflix.com'),
+                                        'path': morsel.get('path', '/')})
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        data['cookies'] = cookies
+        with open(SESSION_OUT, 'w', encoding='utf-8') as fh:
+            json.dump(data, fh, ensure_ascii=False)
+        return True
+    except Exception:
+        return False
+
+
 def injector(window):
+    captured = False
     while True:
         try:
             if LOAD_JS:
                 window.evaluate_js(LOAD_JS)
             if STYLE_JS:
                 window.evaluate_js(STYLE_JS)
+            if SESSION_OUT and not captured:
+                captured = _capture_session(window)
         except Exception:
             pass
         time.sleep(3)

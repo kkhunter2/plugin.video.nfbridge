@@ -9,13 +9,24 @@ try:
 except ImportError:
     from urllib import urlencode
 
+import os
+
 import xbmc
 import xbmcgui
 import xbmcplugin
 import xbmcaddon
+import xbmcvfs
 
 ADDON = xbmcaddon.Addon()
 ADDON_ID = ADDON.getAddonInfo('id')
+
+
+def profile_dir():
+    """The addon's writable data dir (special://profile/addon_data/<id>/)."""
+    p = xbmcvfs.translatePath(ADDON.getAddonInfo('profile'))
+    if not os.path.isdir(p):
+        os.makedirs(p)
+    return p
 
 # populated per-invocation by router.set_context()
 _CTX = {'base_url': '', 'handle': -1, 'params': {}}

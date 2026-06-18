@@ -28,8 +28,15 @@ except ImportError:  # Kodi provides script.module.requests at runtime
 from resources.lib import graphql_ops
 
 # ---- endpoints ----
+# The pathEvaluator URL uses the literal 'release' (NOT the build hash) plus a set of
+# feature query-params; the body is form-encoded `path=<json>` (one per path).
 WEBSITE = 'https://www.netflix.com'
-PATH_EVALUATOR = WEBSITE + '/nq/website/memberapi/{build}/pathEvaluator'
+PATH_EVALUATOR = WEBSITE + '/nq/website/memberapi/release/pathEvaluator'
+PATH_EVAL_PARAMS = {
+    'webp': 'true', 'drmSystem': 'playready', 'isVolatileBillboardsEnabled': 'true',
+    'isTop10Supported': 'true', 'hasVideoMerchInBob': 'true', 'hasVideoMerchInJaw': 'true',
+    'falcor_server': '0.1.0',
+}
 GRAPHQL = 'https://web.prod.cloud.netflix.com/graphql'
 GRAPHQL_PQ_VERSION = graphql_ops.GRAPHQL_VERSION  # persistedQuery version
 
@@ -38,6 +45,8 @@ BROWSER_HEADERS = {
                    '(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36'),
     'Accept': 'application/json, text/javascript, */*',
     'Content-Type': 'application/json',
+    'Origin': WEBSITE,
+    'Referer': WEBSITE + '/browse',
     'X-Netflix.Request.Client.User.Guid': '',  # filled with active profile guid
 }
 
@@ -79,10 +88,12 @@ class Session(object):
         if not self.http:
             raise NetflixError('requests unavailable')
         headers = dict(BROWSER_HEADERS)
+        headers['Content-Type'] = 'application/x-www-form-urlencoded'
         headers['X-Netflix.Request.Client.User.Guid'] = self.profile_guid or ''
-        body = {'paths': paths, 'authURL': self.auth_url}
-        url = PATH_EVALUATOR.format(build=self.build)
-        r = self.http.post(url, headers=headers, data=json.dumps(body), timeout=20)
+        # falcor expects form-encoded: path=<json>&path=<json>&...&authURL=<token>
+        data = {'path': [json.dumps(p) for p in paths], 'authURL': self.auth_url}
+        r = self.http.post(PATH_EVALUATOR, params=PATH_EVAL_PARAMS,
+                           headers=headers, data=data, timeout=20)
         if r.status_code == 404:
             raise NetflixError('pathEvaluator 404 (stale build id or dead path)')
         r.raise_for_status()

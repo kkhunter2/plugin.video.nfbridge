@@ -126,8 +126,28 @@ def _launch_embedded(video_id):
         return _launch_delegate(video_id)
 
     env = {'NF_URL': url}
+    try:
+        from resources.lib import session
+        env['NF_SESSION_OUT'] = session.path()   # refresh the browse session while playing
+    except Exception:
+        pass
     _apply_kodi_subtitle_font(py, env)
     return _spawn([py, host], env=env)
+
+
+def launch_signin(session_out):
+    """Open the embedded WebView2 player so the user can sign in; the host captures
+    the browse session (cookies + authURL + build + profile) to session_out."""
+    if _platform() != 'windows':
+        kodiutils.notify('Embedded sign-in needs Windows (WebView2)')
+        return
+    py = kodiutils.setting('webview_python')
+    host = os.path.join(_runtime_dir(), 'webview', 'webview_host.py')
+    if not py or not os.path.exists(py) or not os.path.exists(host):
+        kodiutils.notify('Set "webview_python" in add-on settings first')
+        return
+    return _spawn([py, host], env={'NF_URL': 'https://www.netflix.com/browse',
+                                   'NF_SESSION_OUT': session_out})
 
 
 def _apply_kodi_subtitle_font(py, env):
