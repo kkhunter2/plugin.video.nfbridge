@@ -132,6 +132,14 @@ class NetflixClient:
         except Exception as exc:  # noqa
             raise NetflixError(str(exc))
 
+    def my_list(self):
+        """The user's My List = the home row with context 'queue'."""
+        h = self.home(n_rows=40)
+        for r in h['rows']:
+            if r.get('context') == 'queue':
+                return self.row_videos(h['root'], r['index'], n=60)
+        return []
+
     def episodes(self, video_id):
         """Episodes [{id,title,number,season,art,runtime}] for a show, read from the
         title page's Apollo cache. Empty for movies. Navigates the daemon (call home()

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="plugin.video.nfbridge"
        name="Netflix (Bridge)"
-       version="0.1.0"
+       version="0.2.0"
        provider-name="nfbridge">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -11,8 +11,8 @@
     <provides>video</provides>
   </extension>
   <extension point="xbmc.addon.metadata">
-    <summary lang="en_GB">Netflix browse UI for Kodi with playback delegated to a DRM-capable client</summary>
-    <description lang="en_GB">A clean Netflix addon: native Kodi browsing (home, My List, genres, search, seasons/episodes) with playback delegated to a trusted DRM client — the Netflix app / Edge (PlayReady SL3000, up to 4K on Windows) in "delegate" mode, or a bundled VMP-signed Electron (Widevine privacy mode, 1080p, integrated subtitles) in "embedded" mode. No in-addon DRM, no key handling: each user signs in to their own account and playback runs in a client Netflix already trusts.</description>
+    <summary lang="en_GB">Native Kodi Netflix browsing with playback in a trusted DRM client</summary>
+    <description lang="en_GB">A clean Netflix add-on for Kodi. Browsing (home rows, box art, My List, search, episodes, profiles) is served by a single embedded Microsoft Edge WebView2 window that the add-on queries through Netflix's own in-page data client over localhost — so there is no DRM, no key handling and no fragile API reverse-engineering. Playback runs in that same WebView2 window (Netflix-trusted; up to 4K via PlayReady SL3000 on Windows) with the Kodi subtitle font applied, or is delegated to the OS browser/app. Each user signs in to their own account. Windows only for embedded mode; other platforms delegate.</description>
     <platform>all</platform>
     <license>MIT</license>
     <forum></forum>

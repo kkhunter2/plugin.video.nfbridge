@@ -42,6 +42,7 @@ def home():
         kodiutils.notify('Could not load home: {0}'.format(exc))
         return kodiutils.end_directory(content='files')
     kodiutils.add_directory('[B]Search[/B]', kodiutils.url_for(action='search'))
+    kodiutils.add_directory('[B]My List[/B]', kodiutils.url_for(action='mylist'))
     kodiutils.add_directory('[B]Profiles[/B]', kodiutils.url_for(action='profiles'))
     for r in data['rows']:
         kodiutils.add_directory(
@@ -107,8 +108,17 @@ def video_list():
 
 
 def my_list():
-    kodiutils.notify('My List shows as a row on the home screen')
-    home()
+    c = _client()
+    if not c.ensure():
+        return kodiutils.end_directory()
+    try:
+        items = c.my_list()
+    except Exception as exc:  # noqa
+        kodiutils.notify('Could not load My List: {0}'.format(exc))
+        return kodiutils.end_directory()
+    for v in items:
+        _add_item(v)
+    kodiutils.end_directory(content='movies')
 
 
 def search():
