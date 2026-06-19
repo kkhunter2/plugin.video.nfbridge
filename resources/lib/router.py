@@ -25,6 +25,20 @@ def dispatch(base_url, handle, query):
     action = params.get('action', 'root')
     kodiutils.set_context(base_url, handle, params)
 
+    # Daemon recovery: the detached daemon can die while Kodi still shows cached lists, so
+    # any click would just error. If a browse action runs while the daemon is dead,
+    # relaunch it, drop the now-stale cache (the LoCo root changes on relaunch) and land
+    # the user on a fresh Home instead of the broken view.
+    if action not in ('play', 'signin', 'signout', 'switchprofile'):
+        from resources.lib import player, cache
+        client = player.browse_client()
+        if not client.running():
+            cache.clear()
+            if client.ensure():
+                kodiutils.notify('Netflix reconnected')
+                if action not in ('root', 'home', 'profiles', 'categories'):
+                    action = 'root'
+
     table = {
         'root': routes.root,
         'profiles': routes.profiles,
