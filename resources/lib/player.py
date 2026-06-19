@@ -115,15 +115,16 @@ def _windows_launch_netflix_app(video_id):
 # trusted, so it plays (incl. PlayReady SL3000 / 4K) in our own window, where we
 # inject the Kodi subtitle font + style. (An Electron embed is rejected by Netflix.)
 def _webview_cmd():
-    """Base command to run the WebView2 host: the bundled exe if present, else a
-    configured python + the host script. None if neither is available."""
-    exe = os.path.join(_runtime_dir(), 'webview', 'dist', 'nfbridge_player.exe')
-    if os.path.exists(exe):
-        return [exe]
+    """Base command to run the WebView2 host. Prefer a configured python.exe (signed
+    -> passes Windows Smart App Control) + the host script; fall back to the bundled
+    exe (unsigned PyInstaller build — may be blocked by Smart App Control)."""
     py = kodiutils.setting('webview_python')
     host = os.path.join(_runtime_dir(), 'webview', 'webview_host.py')
     if py and os.path.exists(py) and os.path.exists(host):
         return [py, host]
+    exe = os.path.join(_runtime_dir(), 'webview', 'dist', 'nfbridge_player.exe')
+    if os.path.exists(exe):
+        return [exe]
     return None
 
 
