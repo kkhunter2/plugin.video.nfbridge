@@ -126,8 +126,13 @@ def _capture_session(window):
 # THROUGH the page's own data client (netflix.appContext.state.pathEvaluator.get) —
 # so all X-Netflix headers / auth / CSRF are Netflix's own (no 412, future-proof).
 RPC_PORT = os.environ.get('NF_RPC_PORT')
-_rpc_lock = threading.Lock()
+# ONE lock serialises every access to the WebView from any thread (RPC handlers, the
+# window monitor, the injector). Concurrent load_url/evaluate_js from two threads
+# crashes WebView2 (the daemon dies during rapid menu navigation). RLock so a handler
+# that already holds it can call helpers that also take it.
+_rpc_lock = threading.RLock()
 _rpc_counter = [0]
+_ready = [False]   # last-known readiness; /health returns it without blocking
 
 READY_JS = ('!!(window.netflix&&netflix.appContext&&netflix.appContext.state&&'
             'netflix.appContext.state.pathEvaluator&&netflix.reactContext&&'
@@ -370,20 +375,15 @@ def _set_fullscreen(window, on):
 
 
 def _render_offscreen(window):
-    """Un-minimize and move the window OFF-SCREEN so akira renders (loads data) without
-    a visible flash or stealing focus. Falls back to pywebview restore."""
+    """Move the window OFF-SCREEN so akira keeps rendering (loads data) with no visible
+    flash. Uses pywebview move()/show() which marshal to the GUI thread — cross-thread
+    Win32 calls on the WebView HWND crash WebView2 under rapid navigation."""
     try:
-        import ctypes
-        u = ctypes.windll.user32
-        hwnd = u.FindWindowW(None, u'Netflix')
-        if hwnd:
-            u.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE (un-minimize, no focus)
-            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0014)  # NOACTIVATE|NOZORDER
-            return
+        window.show()
     except Exception:
         pass
     try:
-        window.restore()
+        window.move(-4000, -4000)
     except Exception:
         pass
 
@@ -412,12 +412,15 @@ def _start_rpc(window, port):
     import http.server
 
     def send(h, code, obj):
-        body = json.dumps(obj).encode('utf-8')
-        h.send_response(code)
-        h.send_header('Content-Type', 'application/json')
-        h.send_header('Content-Length', str(len(body)))
-        h.end_headers()
-        h.wfile.write(body)
+        try:
+            body = json.dumps(obj).encode('utf-8')
+            h.send_response(code)
+            h.send_header('Content-Type', 'application/json')
+            h.send_header('Content-Length', str(len(body)))
+            h.end_headers()
+            h.wfile.write(body)
+        except Exception:
+            pass   # client disconnected (rapid navigation) -> ignore
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -425,18 +428,27 @@ def _start_rpc(window, port):
 
         def do_GET(self):
             if self.path == '/health':
-                try:
-                    ready = bool(window.evaluate_js(READY_JS))
-                except Exception:
-                    ready = False
-                send(self, 200, {'ready': ready})
-            elif self.path == '/context':
+                # never blocks: refresh readiness only if the window is free this instant
+                if _rpc_lock.acquire(blocking=False):
+                    try:
+                        _ready[0] = bool(window.evaluate_js(READY_JS))
+                    except Exception:
+                        pass
+                    finally:
+                        _rpc_lock.release()
+                return send(self, 200, {'ready': _ready[0]})
+            if self.path == '/quit':
+                send(self, 200, {'ok': True})
+                threading.Timer(0.3, lambda: os._exit(0)).start()
+                return
+            with _rpc_lock:
+              if self.path == '/context':
                 try:
                     raw = window.evaluate_js(CONTEXT_JS)
                     send(self, 200, json.loads(raw) if raw else {'err': 'no context'})
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
-            elif self.path == '/show':
+              elif self.path == '/show':
                 # bring the window forward for sign-in; auto-minimize once home is reached
                 try:
                     window.load_url('https://www.netflix.com/login')
@@ -445,14 +457,11 @@ def _start_rpc(window, port):
                     send(self, 200, {'ok': True})
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
-            elif self.path == '/quit':
-                # used to relaunch with a different profile index
-                send(self, 200, {'ok': True})
-                threading.Timer(0.3, lambda: os._exit(0)).start()
-            else:
+              else:
                 send(self, 404, {'err': 'not found'})
 
         def do_POST(self):
+          with _rpc_lock:
             try:
                 ln = int(self.headers.get('Content-Length', 0))
                 req = json.loads(self.rfile.read(ln) or b'{}')
@@ -490,7 +499,10 @@ def _start_rpc(window, port):
             else:
                 send(self, 404, {'err': 'not found'})
 
-    srv = http.server.HTTPServer(('127.0.0.1', int(port)), Handler)
+    # Threaded so a long op (episodes/search navigation) never blocks /health or other
+    # requests; the _rpc_lock still serialises actual window access.
+    srv = http.server.ThreadingHTTPServer(('127.0.0.1', int(port)), Handler)
+    srv.daemon_threads = True
     threading.Thread(target=srv.serve_forever, daemon=True).start()
 
 
@@ -498,12 +510,13 @@ def injector(window):
     captured = False
     while True:
         try:
-            if LOAD_JS:
-                window.evaluate_js(LOAD_JS)
-            if STYLE_JS:
-                window.evaluate_js(STYLE_JS)
-            if SESSION_OUT and not captured:
-                captured = _capture_session(window)
+            with _rpc_lock:
+                if LOAD_JS:
+                    window.evaluate_js(LOAD_JS)
+                if STYLE_JS:
+                    window.evaluate_js(STYLE_JS)
+                if SESSION_OUT and not captured:
+                    captured = _capture_session(window)
         except Exception:
             pass
         time.sleep(3)
@@ -547,28 +560,27 @@ def window_monitor(window):
         -> drop fullscreen and minimize so Kodi returns to the front."""
     was_watching = False
     while True:
-        try:
-            if _FS[0]:
-                url = window.evaluate_js('location.href') or ''
-                if '/watch/' in url:
-                    was_watching = True
-                elif was_watching:
-                    _set_fullscreen(window, False)
-                    try:
+        # non-blocking: only touch the window when no RPC handler holds the lock,
+        # so the monitor never races a navigation (which crashes WebView2).
+        if _rpc_lock.acquire(blocking=False):
+            try:
+                if _FS[0]:
+                    url = window.evaluate_js('location.href') or ''
+                    if '/watch/' in url:
+                        was_watching = True
+                    elif was_watching:
+                        _set_fullscreen(window, False)
                         _render_offscreen(window)
-                    except Exception:
-                        pass
-                    was_watching = False
-            elif AUTH_SHOWN[0]:
-                ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
-                if ctx.get('locoRoot'):
-                    try:
+                        was_watching = False
+                elif AUTH_SHOWN[0]:
+                    ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
+                    if ctx.get('locoRoot'):
                         _render_offscreen(window)
-                    except Exception:
-                        pass
-                    AUTH_SHOWN[0] = False
-        except Exception:
-            pass
+                        AUTH_SHOWN[0] = False
+            except Exception:
+                pass
+            finally:
+                _rpc_lock.release()
         time.sleep(0.5)
 
 
