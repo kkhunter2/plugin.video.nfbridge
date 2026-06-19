@@ -141,13 +141,13 @@ class NetflixClient:
         return []
 
     def episodes(self, video_id):
-        """Episodes [{id,title,number,season,art,runtime}] for a show, read from the
-        title page's Apollo cache. Empty for movies. Navigates the daemon (call home()
-        to return to browse)."""
+        """Seasons of a show: [{id,title,number,eps:[{id,title,number,art}]}], read from
+        the title page's Apollo cache (filtered to this show). Empty for movies.
+        Navigates the daemon (call home() to return to browse)."""
         if not video_id:
             return []
         try:
-            return (self._post('/episodes', {'videoId': video_id}, timeout=45) or {}).get('episodes', [])
+            return (self._post('/episodes', {'videoId': video_id}, timeout=45) or {}).get('seasons', [])
         except Exception as exc:  # noqa
             raise NetflixError(str(exc))
 

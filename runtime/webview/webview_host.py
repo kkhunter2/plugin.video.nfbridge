@@ -227,39 +227,67 @@ def _search_get(window, q, timeout=15):
     return []
 
 
-EPISODES_EXTRACT_JS = (
-    '(function(){try{var c=netflix.appContext.state.graphqlClient.cache.extract();var out=[];'
-    'Object.keys(c).forEach(function(k){var m=k.match(/^Episode:\\{"videoId":(\\d+)\\}/);if(!m)return;'
-    'var e=c[k];var snum=null;var ps=(e.parentSeason||{}).__ref;if(ps&&c[ps])snum=c[ps].number;'
-    'var art=null;Object.keys(e).forEach(function(f){if(art)return;'
-    'if(f.indexOf("artwork")>=0&&f.indexOf("342")>=0){try{if(e[f]&&e[f].url)art=e[f].url;}catch(_){}}});'
-    'out.push({id:m[1],title:e.title,number:e.number,season:snum,art:art,'
-    'runtime:e.runtimeSec||e.displayRuntimeSec});});'
-    'out.sort(function(a,b){return ((a.season||0)-(b.season||0))||((a.number||0)-(b.number||0));});'
-    'return JSON.stringify(out);}catch(e){return "[]";}})()')
+def _season_list_js(show_id):
+    """Ordered season ids/titles from the Show's seasons connection (Apollo)."""
+    return (
+        '(function(){try{var c=netflix.appContext.state.graphqlClient.cache.extract();'
+        'var e=c[\'Show:{"videoId":%s}\'];if(!e||!e.seasons)return "[]";var out=[];'
+        '((e.seasons.edges)||[]).forEach(function(ed){var ref=((ed.node)||{}).__ref||"";'
+        'var m=ref.match(/Season:\\{"videoId":(\\d+)\\}/);if(m){var s=c[ref]||{};'
+        'out.push({id:m[1],title:s.title,number:s.number});}});'
+        'return JSON.stringify(out);}catch(e){return "[]";}})()' % str(show_id))
 
 
-def _episodes_get(window, vid, timeout=20):
+def _episodes_get(window, vid, timeout=15):
+    """Seasons + episodes WITHOUT rendering the episode UI: the season list comes from
+    the Apollo Show.seasons connection; each season's episodes come from falcor
+    (["seasons",id,"episodes",range,"itemSummary"]) — both work off-screen, no flash."""
     _set_fullscreen(window, False)
-    _render_offscreen(window)   # render off-screen (no visible flash) so episodes load
+    _render_offscreen(window)
     try:
         window.evaluate_js("location.assign('https://www.netflix.com/title/%s')" % str(vid))
     except Exception:
         pass
-    best, stable = [], 0
+    meta = []
+    sjs = _season_list_js(vid)
     for _ in range(timeout * 2):
         try:
-            arr = json.loads(window.evaluate_js(EPISODES_EXTRACT_JS) or '[]')
-            if len(arr) > len(best):
-                best, stable = arr, 0
-            elif arr:
-                stable += 1
-                if stable >= 6:   # ~3s with no new episodes -> settled
-                    break
+            meta = json.loads(window.evaluate_js(sjs) or '[]')
+        except Exception:
+            meta = []
+        if meta:
+            break
+        time.sleep(0.5)
+    if not meta:
+        return []
+
+    result = []
+    for sm in meta:
+        sid = sm['id']
+        eps = []
+        try:
+            fj = _falcor_get(window, [['seasons', sid, 'episodes',
+                                       {'from': 0, 'to': 60}, 'itemSummary']], 15)
+            node = (fj.get('json') or {}).get('seasons', {}).get(sid, {}).get('episodes', {})
+            for k, cell in node.items():
+                if not (isinstance(k, str) and k.isdigit()) or not isinstance(cell, dict):
+                    continue
+                it = cell.get('itemSummary') or {}
+                path = cell.get('$__path') or []
+                epid = str(path[1]) if len(path) > 1 else (str(it.get('id')) if it.get('id') else None)
+                if epid:
+                    eps.append({'id': epid, 'number': it.get('episode')})
+            eps.sort(key=lambda e: e.get('number') or 0)
+            if eps:
+                tj = _falcor_get(window, [['videos', e['id'], 'title'] for e in eps], 15)
+                tv = (tj.get('json') or {}).get('videos', {})
+                for e in eps:
+                    e['title'] = tv.get(e['id'], {}).get('title')
+                    e['art'] = None
         except Exception:
             pass
-        time.sleep(0.5)
-    return best
+        result.append({'id': sid, 'title': sm.get('title'), 'number': sm.get('number'), 'eps': eps})
+    return result
 
 
 def _switch_profile(window, index=0):
@@ -474,7 +502,7 @@ def _start_rpc(window, port):
             elif self.path == '/search':
                 send(self, 200, {'results': _search_get(window, req.get('q', ''))})
             elif self.path == '/episodes':
-                send(self, 200, {'episodes': _episodes_get(window, req.get('videoId', ''))})
+                send(self, 200, {'seasons': _episodes_get(window, req.get('videoId', ''))})
             elif self.path == '/home':
                 send(self, 200, _go_home(window))
             elif self.path == '/genre':

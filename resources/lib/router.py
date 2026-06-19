@@ -37,6 +37,7 @@ def dispatch(base_url, handle, query):
         'mylist': routes.my_list,
         'search': routes.search,
         'show': routes.show,
+        'season': routes.season,
         'play': routes.play,
         'signin': routes.signin,
         'signout': routes.signout,

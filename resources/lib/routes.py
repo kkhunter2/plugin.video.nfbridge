@@ -185,28 +185,50 @@ def search():
     kodiutils.end_directory(content='movies')
 
 
+def _render_episodes(eps):
+    for e in eps:
+        title = e.get('title') or e['id']
+        label = 'E{0}  {1}'.format(e['number'], title) if e.get('number') else title
+        kodiutils.add_directory(
+            label, kodiutils.url_for(action='play', id=e['id']),
+            art={'thumb': e.get('art'), 'poster': e.get('art')},
+            info={'title': e.get('title'), 'mediatype': 'episode'},
+            is_folder=False, playable=True)
+    kodiutils.end_directory(content='episodes')
+
+
 def show():
     c = _client()
-    if not c.ready():
+    if not c.ensure():
         return kodiutils.end_directory()
     sid = kodiutils.param('id')
     try:
-        eps = c.episodes(sid)
+        seasons = cache.cached('eps_{0}'.format(sid), 600, lambda: c.episodes(sid))
     except Exception as exc:  # noqa
         kodiutils.notify('Could not load episodes: {0}'.format(exc))
         return kodiutils.end_directory()
-    if not eps:
-        return player.play(sid)   # no episode list -> just play the title
-    for e in eps:
-        title = e.get('title') or e['id']
-        if e.get('season') and e.get('number'):
-            label = 'S{0}E{1}  {2}'.format(e['season'], e['number'], title)
-        elif e.get('number'):
-            label = 'E{0}  {1}'.format(e['number'], title)
-        else:
-            label = title
-        info = {'title': e.get('title'), 'mediatype': 'episode'}
+    if not seasons:
+        return player.play(sid)             # movie / no episode list -> play
+    if len(seasons) == 1:
+        return _render_episodes(seasons[0].get('eps', []))
+    for i, s in enumerate(seasons):
+        label = s.get('title') or 'Season {0}'.format(s.get('number') or i + 1)
+        cnt = len(s.get('eps', []))
         kodiutils.add_directory(
-            label, kodiutils.url_for(action='play', id=e['id']),
-            art={'thumb': e.get('art')}, info=info, is_folder=False, playable=True)
+            '{0}  ({1})'.format(label, cnt) if cnt else label,
+            kodiutils.url_for(action='season', show=sid, i=str(i)), is_folder=True)
+    kodiutils.end_directory(content='seasons')
+
+
+def season():
+    c = _client()
+    sid = kodiutils.param('show')
+    idx = int(kodiutils.param('i') or '0')
+    try:
+        seasons = cache.cached('eps_{0}'.format(sid), 600, lambda: c.episodes(sid))
+    except Exception as exc:  # noqa
+        kodiutils.notify(str(exc))
+        return kodiutils.end_directory()
+    if idx < len(seasons):
+        return _render_episodes(seasons[idx].get('eps', []))
     kodiutils.end_directory(content='episodes')
