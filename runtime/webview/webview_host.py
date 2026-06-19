@@ -82,6 +82,12 @@ STYLE_JS = ('if(!document.getElementById("nf-subfont")){var s=document.createEle
             's.id="nf-subfont";s.textContent=' + json.dumps(_CSS) + ';'
             '(document.head||document.documentElement).appendChild(s);}') if _CSS else ''
 
+# Hide the scrollbar: when subtitles render the page overflows a hair and the vertical
+# scrollbar's up/down arrows show as white dots top-right/bottom-right of the screen.
+HIDE_JS = ('if(!document.getElementById("nf-noscroll")){var s=document.createElement("style");'
+           's.id="nf-noscroll";s.textContent="::-webkit-scrollbar{display:none !important}'
+           'html,body{overflow:hidden !important}";(document.head||document.documentElement).appendChild(s);}')
+
 
 SESSION_OUT = os.environ.get('NF_SESSION_OUT')
 # Netflix exposes the shakti session in the page's react context once signed in.
@@ -539,6 +545,7 @@ def injector(window):
     while True:
         try:
             with _rpc_lock:
+                window.evaluate_js(HIDE_JS)
                 if LOAD_JS:
                     window.evaluate_js(LOAD_JS)
                 if STYLE_JS:
