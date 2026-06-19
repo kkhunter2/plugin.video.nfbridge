@@ -275,7 +275,8 @@ def _switch_profile(window, index=0):
     except Exception:
         pass
     time.sleep(1)
-    _restore(window)   # bring the gate forward (ctypes SetForegroundWindow)
+    AUTH_SHOWN[0] = True   # auto-minimize once the user picks a profile (home reached)
+    _restore(window)       # bring the gate forward (ctypes SetForegroundWindow)
     return {'shown': True}
 
 
@@ -311,6 +312,7 @@ def _go_home(window, timeout=30):
     """Navigate back to /browse (from search/play) and re-resolve the home root. The
     window must render for akira to prefetch the home LoCo, so un-minimize first, then
     tuck it away again once home is ready."""
+    _set_fullscreen(window, False)
     try:
         window.restore()   # un-minimize (no foreground steal) so akira renders
     except Exception:
@@ -338,6 +340,25 @@ def _go_home(window, timeout=30):
     except Exception:
         pass
     return result
+
+
+_FS = [False]
+
+
+def _set_fullscreen(window, on):
+    """Toggle borderless fullscreen so playback fills the screen (Kodi behind)."""
+    if on and not _FS[0]:
+        try:
+            window.toggle_fullscreen()
+            _FS[0] = True
+        except Exception:
+            pass
+    elif not on and _FS[0]:
+        try:
+            window.toggle_fullscreen()
+            _FS[0] = False
+        except Exception:
+            pass
 
 
 def _restore(window):
@@ -389,9 +410,10 @@ def _start_rpc(window, port):
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
             elif self.path == '/show':
-                # bring the minimized/hidden browse window forward, e.g. for sign-in
+                # bring the window forward for sign-in; auto-minimize once home is reached
                 try:
                     window.load_url('https://www.netflix.com/login')
+                    AUTH_SHOWN[0] = True
                     _restore(window)
                     send(self, 200, {'ok': True})
                 except Exception as exc:
@@ -434,6 +456,7 @@ def _start_rpc(window, port):
                     if vid:
                         window.load_url('https://www.netflix.com/watch/%s' % vid)
                     _restore(window)
+                    _set_fullscreen(window, True)   # fill the screen for playback
                     send(self, 200, {'ok': True})
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
@@ -486,15 +509,54 @@ def _auto_minimize(window):
         time.sleep(1)
 
 
+AUTH_SHOWN = [False]   # window is surfaced for login / profile pick / first load
+
+
+def window_monitor(window):
+    """Single window serves browse + every play. Two behaviours:
+      - while surfaced for auth (login/profile/first load): once the home is reached
+        (locoRoot) the user is done -> minimize so the window is out of sight;
+      - while playing fullscreen: when the user leaves the player (Back -> not /watch)
+        -> drop fullscreen and minimize so Kodi returns to the front."""
+    was_watching = False
+    while True:
+        try:
+            if _FS[0]:
+                url = window.evaluate_js('location.href') or ''
+                if '/watch/' in url:
+                    was_watching = True
+                elif was_watching:
+                    _set_fullscreen(window, False)
+                    try:
+                        window.minimize()
+                    except Exception:
+                        pass
+                    was_watching = False
+            elif AUTH_SHOWN[0]:
+                ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
+                if ctx.get('locoRoot'):
+                    try:
+                        window.minimize()
+                    except Exception:
+                        pass
+                    AUTH_SHOWN[0] = False
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+
 def on_start(window):
     threading.Thread(target=injector, args=(window,), daemon=True).start()
     if RPC_PORT:
         try:
             _start_rpc(window, RPC_PORT)
         except Exception as exc:
-            sys.stderr.write('rpc start failed: %s\n' % exc)
+            # port already bound -> another daemon owns it; don't leave a stray window
+            sys.stderr.write('rpc start failed (duplicate?); exiting: %s\n' % exc)
+            os._exit(1)
     if os.environ.get('NF_MINIMIZE_AFTER_LOAD') == '1':
-        threading.Thread(target=_auto_minimize, args=(window,), daemon=True).start()
+        AUTH_SHOWN[0] = True   # visible to render/prefetch (and for login) -> minimize once home
+    threading.Thread(target=window_monitor, args=(window,), daemon=True).start()
 
 
 if not os.path.isdir(CACHE):
