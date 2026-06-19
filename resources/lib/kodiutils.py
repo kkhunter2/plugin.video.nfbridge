@@ -28,6 +28,56 @@ def profile_dir():
         os.makedirs(p)
     return p
 
+
+def _jsonrpc(method, params):
+    import json
+    return json.loads(xbmc.executeJSONRPC(json.dumps(
+        {'jsonrpc': '2.0', 'method': method, 'params': params, 'id': 1})))
+
+
+def _audio_marker():
+    return os.path.join(profile_dir(), 'audio_saved.json')
+
+
+def release_audio():
+    """Prepare Kodi for embedded playback: (1) free the HDMI audio device — Kodi's
+    passthrough / keep-device-alive hold it exclusively so the player can't open audio
+    and Netflix fails (D7361); (2) disable the screensaver + inhibit idle shutdown, since
+    Kodi counts external playback as idle. The user's settings are saved for restore."""
+    import json
+    try:
+        marker = _audio_marker()
+        if not os.path.exists(marker):
+            saved = {}
+            for key in ('audiooutput.streamsilence', 'audiooutput.passthrough', 'screensaver.mode'):
+                saved[key] = (_jsonrpc('Settings.GetSettingValue',
+                                       {'setting': key}).get('result') or {}).get('value')
+            with open(marker, 'w') as f:
+                json.dump(saved, f)
+        _jsonrpc('Settings.SetSettingValue', {'setting': 'audiooutput.streamsilence', 'value': 0})
+        _jsonrpc('Settings.SetSettingValue', {'setting': 'audiooutput.passthrough', 'value': False})
+        _jsonrpc('Settings.SetSettingValue', {'setting': 'screensaver.mode', 'value': ''})
+        xbmc.executebuiltin('InhibitIdleShutdown(true)')
+    except Exception as exc:  # noqa
+        log('release_audio failed: {0}'.format(exc))
+
+
+def restore_audio():
+    """Restore the settings saved by release_audio() (when playback stops)."""
+    import json
+    try:
+        xbmc.executebuiltin('InhibitIdleShutdown(false)')
+        marker = _audio_marker()
+        if not os.path.exists(marker):
+            return
+        saved = json.load(open(marker))
+        for key, val in saved.items():
+            if val is not None:
+                _jsonrpc('Settings.SetSettingValue', {'setting': key, 'value': val})
+        os.remove(marker)
+    except Exception as exc:  # noqa
+        log('restore_audio failed: {0}'.format(exc))
+
 # populated per-invocation by router.set_context()
 _CTX = {'base_url': '', 'handle': -1, 'params': {}}
 

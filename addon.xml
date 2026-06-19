@@ -10,6 +10,7 @@
   <extension point="xbmc.python.pluginsource" library="default.py">
     <provides>video</provides>
   </extension>
+  <extension point="xbmc.service" library="service.py"/>
   <extension point="xbmc.addon.metadata">
     <summary lang="en_GB">Native Kodi Netflix browsing with playback in a trusted DRM client</summary>
     <description lang="en_GB">A clean Netflix add-on for Kodi. Browsing (home rows, box art, My List, search, episodes, profiles) is served by a single embedded Microsoft Edge WebView2 window that the add-on queries through Netflix's own in-page data client over localhost — so there is no DRM, no key handling and no fragile API reverse-engineering. Playback runs in that same WebView2 window (Netflix-trusted; up to 4K via PlayReady SL3000 on Windows) with the Kodi subtitle font applied, or is delegated to the OS browser/app. Each user signs in to their own account. Windows only for embedded mode; other platforms delegate.</description>

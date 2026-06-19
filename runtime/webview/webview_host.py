@@ -436,14 +436,14 @@ def _set_fullscreen(window, on):
 
 
 def _own_hwnd():
-    """The daemon's own top-level WebView window (current process)."""
+    """The daemon's own main window: the LARGEST visible top-level of this process."""
     try:
         import ctypes
         from ctypes import wintypes
         u = ctypes.windll.user32
         k = ctypes.windll.kernel32
         mypid = k.GetCurrentProcessId()
-        found = [0]
+        best = [0, -1]   # hwnd, area
 
         @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
         def _cb(hwnd, _lp):
@@ -452,11 +452,14 @@ def _own_hwnd():
             pid = wintypes.DWORD()
             u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
             if pid.value == mypid and u.GetWindow(hwnd, 4) == 0:  # GW_OWNER==4 -> top-level
-                found[0] = hwnd
-                return False
+                r = wintypes.RECT()
+                u.GetWindowRect(hwnd, ctypes.byref(r))
+                area = abs((r.right - r.left) * (r.bottom - r.top))
+                if area > best[1]:
+                    best[0], best[1] = hwnd, area
             return True
         u.EnumWindows(_cb, 0)
-        return found[0]
+        return best[0]
     except Exception:
         return 0
 
@@ -481,59 +484,23 @@ def _render_offscreen(window):
 
 
 def _hide_to_kodi(window):
-    """Release foreground to Kodi after the window held it (login / Back / play): minimize
-    (Windows hands focus to the window behind = Kodi), then re-show off-screen WITHOUT
-    activating so it still renders for browse."""
-    try:
-        import ctypes
-        u = ctypes.windll.user32
-        hwnd = _own_hwnd()
-        if hwnd:
-            u.ShowWindow(hwnd, 6)   # SW_MINIMIZE -> foreground goes to Kodi behind it
-            u.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE -> back off-screen, keep focus on Kodi
-            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0014)
-    except Exception:
-        try:
-            window.minimize()
-        except Exception:
-            pass
+    """Send the daemon window off-screen (keeps rendering, no focus steal) and hand the
+    keyboard/remote focus to Kodi."""
+    _render_offscreen(window)
     _focus_kodi()
 
 
-def _focus_kodi():
-    """Give the keyboard/remote focus back to Kodi when the daemon window goes off-screen
-    (after login / Back / returning to browse), so no mouse click is needed. Finds Kodi's
-    window by its process (kodi.exe) rather than a window-class guess."""
+def _force_foreground(hwnd):
+    """Reliably bring hwnd to the foreground WITH keyboard focus. Windows blocks
+    SetForegroundWindow from a background process, so attach to the current foreground
+    thread + tap Alt to unlock it. Used both for the play window (so Back / player keys
+    work) and for Kodi (so the remote works after the window goes away)."""
     try:
         import ctypes
-        from ctypes import wintypes
         u = ctypes.windll.user32
         k = ctypes.windll.kernel32
-        found = [None]
-
-        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
-        def _cb(hwnd, _lp):
-            if not u.IsWindowVisible(hwnd):
-                return True
-            pid = wintypes.DWORD()
-            u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-            h = k.OpenProcess(0x1000, False, pid.value)  # QUERY_LIMITED_INFORMATION
-            if h:
-                buf = ctypes.create_unicode_buffer(260)
-                size = wintypes.DWORD(260)
-                try:
-                    if k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)) \
-                            and buf.value.lower().endswith('kodi.exe'):
-                        found[0] = hwnd
-                finally:
-                    k.CloseHandle(h)
-            return found[0] is None
-        u.EnumWindows(_cb, 0)
-        hwnd = found[0]
         if not hwnd:
             return
-        # Windows blocks SetForegroundWindow from a background process; an Alt key tap +
-        # AttachThreadInput (attach the current foreground thread to Kodi's) unlocks it.
         fg = u.GetForegroundWindow()
         tgt = u.GetWindowThreadProcessId(hwnd, None)
         cur = k.GetCurrentThreadId()
@@ -557,24 +524,52 @@ def _focus_kodi():
         pass
 
 
+def _kodi_hwnd():
+    """Kodi's main window, found by its process image name (kodi.exe)."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        k = ctypes.windll.kernel32
+        found = [0]
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        def _cb(hwnd, _lp):
+            if not u.IsWindowVisible(hwnd):
+                return True
+            pid = wintypes.DWORD()
+            u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            h = k.OpenProcess(0x1000, False, pid.value)  # QUERY_LIMITED_INFORMATION
+            if h:
+                buf = ctypes.create_unicode_buffer(260)
+                size = wintypes.DWORD(260)
+                try:
+                    if k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)) \
+                            and buf.value.lower().endswith('kodi.exe'):
+                        found[0] = hwnd
+                finally:
+                    k.CloseHandle(h)
+            return found[0] == 0
+        u.EnumWindows(_cb, 0)
+        return found[0]
+    except Exception:
+        return 0
+
+
+def _focus_kodi():
+    """Give keyboard/remote focus back to Kodi (after login / Back / returning to browse)."""
+    _force_foreground(_kodi_hwnd())
+
+
 def _restore(window):
-    """Un-minimize / un-hide and bring the window forward (pywebview-version safe)."""
+    """Un-minimize and bring the daemon's own window forward WITH keyboard focus (so the
+    Back key and Netflix player keys work during playback)."""
     for method in ('restore', 'show'):
         try:
             getattr(window, method)()
         except Exception:
             pass
-    # Windows: force the Netflix window to the foreground (pywebview restore alone may
-    # leave it minimized/behind when called from the RPC thread).
-    try:
-        import ctypes
-        u = ctypes.windll.user32
-        hwnd = _own_hwnd()   # by process, NOT title (the title changes to the video name)
-        if hwnd:
-            u.ShowWindow(hwnd, 9)          # SW_RESTORE
-            u.SetForegroundWindow(hwnd)
-    except Exception:
-        pass
+    _force_foreground(_own_hwnd())
 
 
 def _start_rpc(window, port):
@@ -605,7 +600,7 @@ def _start_rpc(window, port):
                         pass
                     finally:
                         _rpc_lock.release()
-                return send(self, 200, {'ready': _ready[0], 'ver': _CODE_VER})
+                return send(self, 200, {'ready': _ready[0], 'ver': _CODE_VER, 'playing': _FS[0]})
             if self.path == '/quit':
                 send(self, 200, {'ok': True})
                 threading.Timer(0.3, lambda: os._exit(0)).start()
@@ -658,15 +653,13 @@ def _start_rpc(window, port):
             elif self.path == '/play':
                 vid = req.get('videoId')
                 try:
-                    # Bring the window ON-SCREEN fullscreen BEFORE loading /watch so the
-                    # protected video surface (4K PlayReady SL3000 hardware path on a UHD
-                    # display) initialises on a real monitor — initialising it while the
-                    # window is off-screen fails with a Media Foundation error (D7361).
-                    _restore(window)
-                    _set_fullscreen(window, True)
-                    time.sleep(0.4)                 # let the window settle on the monitor
+                    # Navigate to the new watch page FIRST: this unloads any previous
+                    # (paused) video so bringing the window forward can't resume the old one.
                     if vid:
                         window.load_url('https://www.netflix.com/watch/%s' % vid)
+                    _restore(window)
+                    _set_fullscreen(window, True)   # fill the screen for playback
+                    _force_foreground(_own_hwnd())  # focus so Back / player keys work
                     send(self, 200, {'ok': True})
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
@@ -746,15 +739,19 @@ def window_monitor(window):
                         'JSON.stringify({u:location.href,v:!!document.querySelector("video"),'
                         'e:/D7\\d{3}/.test(document.body.innerText),b:!!window.__TOKODI})') or '{}')
                     url = st.get('u', '')
+                    give_up = False
                     if '/watch/' in url:
                         was_watching = True
                         if st.get('v'):
                             reload_count = 0               # playing fine
-                        elif st.get('e') and reload_count < 3:
-                            window.load_url(url)           # transient D7xxx -> re-navigate fresh
-                            reload_count += 1
-                    # Back pressed, or the player was exited (left /watch) -> return to Kodi
-                    if st.get('b') or (was_watching and '/watch/' not in url):
+                        elif st.get('e'):
+                            if reload_count < 3:
+                                window.load_url(url)       # transient error -> re-navigate fresh
+                                reload_count += 1
+                            else:
+                                give_up = True             # retries exhausted -> escape to Kodi
+                    # Back pressed, retries exhausted, or the player was exited -> return to Kodi
+                    if st.get('b') or give_up or (was_watching and '/watch/' not in url):
                         try:
                             window.evaluate_js('window.__TOKODI=0;var v=document.querySelector("video");'
                                                'if(v){try{v.pause();}catch(e){}}')
@@ -769,6 +766,21 @@ def window_monitor(window):
                     if ctx.get('locoRoot'):
                         _hide_to_kodi(window)
                         AUTH_SHOWN[0] = False
+                else:
+                    # Not playing and not surfaced for auth: the browse window must not hold
+                    # focus. If it grabbed the foreground (e.g. just after login), push it
+                    # off-screen and hand focus back to Kodi.
+                    try:
+                        import ctypes
+                        u = ctypes.windll.user32
+                        u.GetForegroundWindow.restype = ctypes.c_void_p
+                        fg = u.GetForegroundWindow()
+                        own = _own_hwnd()
+                        if own and fg and int(fg) == int(own):
+                            _render_offscreen(window)
+                            _focus_kodi()
+                    except Exception:
+                        pass
             except Exception:
                 pass
             finally:
