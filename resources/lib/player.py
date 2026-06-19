@@ -181,10 +181,18 @@ def _ensure_daemon():
     _spawn(cmd, env=_daemon_env())
 
 
+def _code_ver():
+    """mtime of the deployed daemon script -> lets nfclient restart a stale daemon."""
+    try:
+        return str(int(os.path.getmtime(os.path.join(_runtime_dir(), 'webview', 'webview_host.py'))))
+    except Exception:
+        return None
+
+
 def browse_client():
     """A NetflixClient wired to launch/connect the daemon."""
     from resources.lib import nfclient
-    return nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon)
+    return nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon, code_ver=_code_ver())
 
 
 def launch_signin(*_args):

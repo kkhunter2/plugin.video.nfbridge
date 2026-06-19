@@ -46,11 +46,12 @@ def _digit_items(node):
 
 
 class NetflixClient:
-    def __init__(self, port=DEFAULT_PORT, launcher=None, ready_timeout=60):
+    def __init__(self, port=DEFAULT_PORT, launcher=None, ready_timeout=60, code_ver=None):
         self.port = port
         self.base = 'http://127.0.0.1:%d' % port
         self.launcher = launcher
         self.ready_timeout = ready_timeout
+        self.code_ver = code_ver   # if the running daemon's /health ver differs -> restart it
 
     # ---- transport ----
     def _get(self, path, timeout=20):
@@ -80,9 +81,27 @@ class NetflixClient:
         finally:
             s.close()
 
+    def _daemon_ver(self):
+        try:
+            return self._get('/health', timeout=3).get('ver')
+        except Exception:
+            return None
+
     def ensure(self):
-        """Make sure the daemon is up and signed in. Launches it (once) if the
-        process isn't running, then waits for the page to be ready."""
+        """Make sure the daemon is up, current and signed in. A detached daemon survives
+        Kodi restarts, so if the running one is from older code (ver mismatch) stop it and
+        launch a fresh one; otherwise launch it if not running, then wait until ready."""
+        if self.running() and self.code_ver:
+            ver = self._daemon_ver()
+            if ver is not None and ver != self.code_ver:
+                try:
+                    self._get('/quit', timeout=3)   # stale daemon -> stop it
+                except Exception:
+                    pass
+                for _ in range(12):
+                    if not self.running():
+                        break
+                    time.sleep(0.5)
         if self.ready():
             return True
         if not self.running() and self.launcher:

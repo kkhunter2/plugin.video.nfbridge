@@ -145,6 +145,10 @@ RPC_PORT = os.environ.get('NF_RPC_PORT')
 _rpc_lock = threading.RLock()
 _rpc_counter = [0]
 _ready = [False]   # last-known readiness; /health returns it without blocking
+try:
+    _CODE_VER = str(int(os.path.getmtime(os.path.abspath(__file__))))  # restart on code change
+except Exception:
+    _CODE_VER = '0'
 
 READY_JS = ('!!(window.netflix&&netflix.appContext&&netflix.appContext.state&&'
             'netflix.appContext.state.pathEvaluator&&netflix.reactContext&&'
@@ -601,7 +605,7 @@ def _start_rpc(window, port):
                         pass
                     finally:
                         _rpc_lock.release()
-                return send(self, 200, {'ready': _ready[0]})
+                return send(self, 200, {'ready': _ready[0], 'ver': _CODE_VER})
             if self.path == '/quit':
                 send(self, 200, {'ok': True})
                 threading.Timer(0.3, lambda: os._exit(0)).start()
