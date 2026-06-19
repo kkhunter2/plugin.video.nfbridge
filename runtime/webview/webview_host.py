@@ -235,10 +235,8 @@ EPISODES_EXTRACT_JS = (
 
 
 def _episodes_get(window, vid, timeout=20):
-    try:
-        window.restore()   # render so the episode list loads (minimized loads only 1)
-    except Exception:
-        pass
+    _set_fullscreen(window, False)
+    _render_offscreen(window)   # render off-screen (no visible flash) so episodes load
     try:
         window.evaluate_js("location.assign('https://www.netflix.com/title/%s')" % str(vid))
     except Exception:
@@ -256,10 +254,6 @@ def _episodes_get(window, vid, timeout=20):
         except Exception:
             pass
         time.sleep(0.5)
-    try:
-        window.minimize()
-    except Exception:
-        pass
     return best
 
 
@@ -282,8 +276,9 @@ def _switch_profile(window, index=0):
 
 def _genre(window, gid, timeout=25):
     """Navigate to a genre/category page and return its LoCo root (rows are then read
-    by falcor like the home). Renders (restore) so the page prefetches, then minimizes."""
-    _restore(window)
+    by falcor like the home). Renders off-screen so the page prefetches, no flash."""
+    _set_fullscreen(window, False)
+    _render_offscreen(window)
     try:
         window.evaluate_js("location.assign('https://www.netflix.com/browse/genre/%s')" % str(gid))
     except Exception:
@@ -301,11 +296,7 @@ def _genre(window, gid, timeout=25):
         except Exception:
             pass
         time.sleep(1)
-    try:
-        window.minimize()
-    except Exception:
-        pass
-    return result
+    return result   # window stays off-screen (rendered there); no flash
 
 
 def _go_home(window, timeout=30):
@@ -313,10 +304,7 @@ def _go_home(window, timeout=30):
     window must render for akira to prefetch the home LoCo, so un-minimize first, then
     tuck it away again once home is ready."""
     _set_fullscreen(window, False)
-    try:
-        window.restore()   # un-minimize (no foreground steal) so akira renders
-    except Exception:
-        pass
+    _render_offscreen(window)   # render off-screen (no visible flash) so home prefetches
     result = {}
     for _t in range(timeout):
         try:
@@ -335,30 +323,69 @@ def _go_home(window, timeout=30):
         except Exception:
             pass
         time.sleep(1)
-    try:
-        window.minimize()
-    except Exception:
-        pass
-    return result
+    return result   # window stays off-screen (rendered there); no flash
 
 
 _FS = [False]
+_PREV_STYLE = [0]
 
 
 def _set_fullscreen(window, on):
-    """Toggle borderless fullscreen so playback fills the screen (Kodi behind)."""
-    if on and not _FS[0]:
-        try:
-            window.toggle_fullscreen()
+    """Borderless fullscreen via Win32: a WS_POPUP window covering the whole screen
+    (with a few px overscan so no edge line shows). pywebview's toggle_fullscreen left
+    gaps at the bottom/right."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        u.FindWindowW.restype = wintypes.HWND
+        u.GetWindowLongW.restype = ctypes.c_long
+        u.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+        u.SetWindowLongW.restype = ctypes.c_long
+        u.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
+        u.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int,
+                                   ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        hwnd = u.FindWindowW(None, u'Netflix')
+        if not hwnd:
+            return
+        GWL_STYLE = -16
+        if on and not _FS[0]:
+            try:
+                ctypes.windll.shcore.SetProcessDpiAwareness(2)  # per-monitor, real px
+            except Exception:
+                pass
+            _PREV_STYLE[0] = u.GetWindowLongW(hwnd, GWL_STYLE)
+            sw = u.GetSystemMetrics(0)
+            sh = u.GetSystemMetrics(1)
+            u.SetWindowLongW(hwnd, GWL_STYLE, -2147483648 | 0x10000000)  # WS_POPUP|WS_VISIBLE
+            # HWND_TOPMOST(-1), 2px overscan each side, FRAMECHANGED|SHOWWINDOW
+            u.SetWindowPos(hwnd, -1, -2, -2, sw + 4, sh + 4, 0x0020 | 0x0040)
             _FS[0] = True
-        except Exception:
-            pass
-    elif not on and _FS[0]:
-        try:
-            window.toggle_fullscreen()
+        elif not on and _FS[0]:
+            u.SetWindowLongW(hwnd, GWL_STYLE, _PREV_STYLE[0] or 0x00CF0000)
+            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0020 | 0x0010)  # FRAMECHANGED|NOACTIVATE
             _FS[0] = False
-        except Exception:
-            pass
+    except Exception:
+        pass
+
+
+def _render_offscreen(window):
+    """Un-minimize and move the window OFF-SCREEN so akira renders (loads data) without
+    a visible flash or stealing focus. Falls back to pywebview restore."""
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        hwnd = u.FindWindowW(None, u'Netflix')
+        if hwnd:
+            u.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE (un-minimize, no focus)
+            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0014)  # NOACTIVATE|NOZORDER
+            return
+    except Exception:
+        pass
+    try:
+        window.restore()
+    except Exception:
+        pass
 
 
 def _restore(window):
@@ -501,7 +528,7 @@ def _auto_minimize(window):
                 ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
                 if ctx.get('locoRoot'):
                     time.sleep(1)
-                    window.minimize()
+                    _render_offscreen(window)
                     return
                 window.evaluate_js(SELECT_PROFILE_JS)  # likely on the profile gate
         except Exception:
@@ -528,7 +555,7 @@ def window_monitor(window):
                 elif was_watching:
                     _set_fullscreen(window, False)
                     try:
-                        window.minimize()
+                        _render_offscreen(window)
                     except Exception:
                         pass
                     was_watching = False
@@ -536,7 +563,7 @@ def window_monitor(window):
                 ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
                 if ctx.get('locoRoot'):
                     try:
-                        window.minimize()
+                        _render_offscreen(window)
                     except Exception:
                         pass
                     AUTH_SHOWN[0] = False
@@ -554,19 +581,21 @@ def on_start(window):
             # port already bound -> another daemon owns it; don't leave a stray window
             sys.stderr.write('rpc start failed (duplicate?); exiting: %s\n' % exc)
             os._exit(1)
-    if os.environ.get('NF_MINIMIZE_AFTER_LOAD') == '1':
-        AUTH_SHOWN[0] = True   # visible to render/prefetch (and for login) -> minimize once home
+    # The window starts off-screen and renders there; nothing to minimize. AUTH_SHOWN is
+    # only set when /show or /switch surface it for sign-in/profile (then it returns
+    # off-screen once home is reached).
     threading.Thread(target=window_monitor, args=(window,), daemon=True).start()
 
 
 if not os.path.isdir(CACHE):
     os.makedirs(CACHE)
 _profile = os.environ.get('NF_PROFILE') or os.path.join(CACHE, 'profile')
-# NOTE: a fully hidden window does not render, so the akira UI never prefetches the
-# home LoCo (no locoRoot). A *minimized* window renders (prefetch happens) but stays
-# out of the way; /play and /show restore it. Prefer minimized for the browse daemon.
+# The browse daemon lives OFF-SCREEN: a hidden/minimized window does NOT render (akira
+# never prefetches), but a window positioned off-screen DOES render while staying
+# invisible -> data loads with no flash. /play and /show move it on-screen.
+_offscreen = bool(RPC_PORT) and os.environ.get('NF_FULLSCREEN') != '1'
 _win = webview.create_window('Netflix', URL, width=1600, height=900,
-                             hidden=(os.environ.get('NF_HIDDEN') == '1'),
-                             minimized=(os.environ.get('NF_MINIMIZED') == '1'),
+                             x=(-4000 if _offscreen else None),
+                             y=(-4000 if _offscreen else None),
                              fullscreen=(os.environ.get('NF_FULLSCREEN') == '1'))
 webview.start(on_start, _win, private_mode=False, storage_path=_profile)

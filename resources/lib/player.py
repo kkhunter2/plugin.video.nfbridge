@@ -43,7 +43,7 @@ def _spawn(args, env=None):
         e.update(env)
     flags = 0
     if _platform() == 'windows':
-        flags = 0x00000008  # DETACHED_PROCESS
+        flags = 0x08000000  # CREATE_NO_WINDOW (no python console flashes up)
     return subprocess.Popen(args, env=e, creationflags=flags,
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
