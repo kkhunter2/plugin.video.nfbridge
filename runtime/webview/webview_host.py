@@ -411,7 +411,7 @@ def _set_fullscreen(window, on):
         u.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
         u.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int,
                                    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
-        hwnd = u.FindWindowW(None, u'Netflix')
+        hwnd = _own_hwnd()   # by process, NOT title (the title changes to the video name)
         if not hwnd:
             return
         GWL_STYLE = -16
@@ -569,7 +569,7 @@ def _restore(window):
     try:
         import ctypes
         u = ctypes.windll.user32
-        hwnd = u.FindWindowW(None, u'Netflix')
+        hwnd = _own_hwnd()   # by process, NOT title (the title changes to the video name)
         if hwnd:
             u.ShowWindow(hwnd, 9)          # SW_RESTORE
             u.SetForegroundWindow(hwnd)
@@ -658,10 +658,15 @@ def _start_rpc(window, port):
             elif self.path == '/play':
                 vid = req.get('videoId')
                 try:
+                    # Bring the window ON-SCREEN fullscreen BEFORE loading /watch so the
+                    # protected video surface (4K PlayReady SL3000 hardware path on a UHD
+                    # display) initialises on a real monitor — initialising it while the
+                    # window is off-screen fails with a Media Foundation error (D7361).
+                    _restore(window)
+                    _set_fullscreen(window, True)
+                    time.sleep(0.4)                 # let the window settle on the monitor
                     if vid:
                         window.load_url('https://www.netflix.com/watch/%s' % vid)
-                    _restore(window)
-                    _set_fullscreen(window, True)   # fill the screen for playback
                     send(self, 200, {'ok': True})
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
