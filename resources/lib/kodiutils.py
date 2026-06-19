@@ -70,10 +70,10 @@ def release_audio():
                                        {'setting': key}).get('result') or {}).get('value')
             with open(marker, 'w') as f:
                 json.dump(saved, f)
+            xbmc.executebuiltin('InhibitIdleShutdown(true)')   # once, balanced by restore
         _jsonrpc('Settings.SetSettingValue', {'setting': 'audiooutput.streamsilence', 'value': 0})
         _jsonrpc('Settings.SetSettingValue', {'setting': 'audiooutput.passthrough', 'value': False})
         _jsonrpc('Settings.SetSettingValue', {'setting': 'screensaver.mode', 'value': ''})
-        xbmc.executebuiltin('InhibitIdleShutdown(true)')
     except Exception as exc:  # noqa
         log('release_audio failed: {0}'.format(exc))
 
@@ -82,10 +82,10 @@ def restore_audio():
     """Restore the settings saved by release_audio() (when playback stops)."""
     import json
     try:
-        xbmc.executebuiltin('InhibitIdleShutdown(false)')
         marker = _audio_marker()
         if not os.path.exists(marker):
             return
+        xbmc.executebuiltin('InhibitIdleShutdown(false)')
         saved = json.load(open(marker))
         for key, val in saved.items():
             if val is not None:

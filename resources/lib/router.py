@@ -29,6 +29,12 @@ def dispatch(base_url, handle, query):
     # any click would just error. If a browse action runs while the daemon is dead,
     # relaunch it, drop the now-stale cache (the LoCo root changes on relaunch) and land
     # the user on a fresh Home instead of the broken view.
+    # Safety net: any non-play action means the user is browsing, not watching, so make
+    # sure the audio device / screensaver are back to the user's settings (in case the
+    # service missed the stop).
+    if action != 'play':
+        kodiutils.restore_audio()
+
     if action not in ('play', 'signin', 'signout', 'switchprofile'):
         from resources.lib import player, cache
         client = player.browse_client()

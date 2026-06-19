@@ -729,6 +729,7 @@ def window_monitor(window):
         -> drop fullscreen and minimize so Kodi returns to the front."""
     was_watching = False
     reload_count = 0
+    stuck = 0
     while True:
         # non-blocking: only touch the window when no RPC handler holds the lock,
         # so the monitor never races a navigation (which crashes WebView2).
@@ -739,19 +740,34 @@ def window_monitor(window):
                         'JSON.stringify({u:location.href,v:!!document.querySelector("video"),'
                         'e:/D7\\d{3}/.test(document.body.innerText),b:!!window.__TOKODI})') or '{}')
                     url = st.get('u', '')
-                    give_up = False
-                    if '/watch/' in url:
+                    on_watch = '/watch/' in url
+                    has_video = bool(st.get('v'))
+                    if on_watch:
                         was_watching = True
-                        if st.get('v'):
-                            reload_count = 0               # playing fine
-                        elif st.get('e'):
-                            if reload_count < 3:
-                                window.load_url(url)       # transient error -> re-navigate fresh
-                                reload_count += 1
-                            else:
-                                give_up = True             # retries exhausted -> escape to Kodi
-                    # Back pressed, retries exhausted, or the player was exited -> return to Kodi
-                    if st.get('b') or give_up or (was_watching and '/watch/' not in url):
+                    # Keep the play window focused so Back / player keys reach it. Only act
+                    # when it lost the foreground (so normal playback isn't disturbed).
+                    if not has_video:
+                        try:
+                            import ctypes
+                            u = ctypes.windll.user32
+                            u.GetForegroundWindow.restype = ctypes.c_void_p
+                            fg = u.GetForegroundWindow()
+                            own = _own_hwnd()
+                            if own and (not fg or int(fg) != int(own)):
+                                _force_foreground(own)
+                        except Exception:
+                            pass
+                    if has_video:
+                        reload_count = 0
+                        stuck = 0
+                    elif on_watch:
+                        stuck += 1
+                        if st.get('e') and reload_count < 3:
+                            window.load_url(url)           # transient error -> re-navigate fresh
+                            reload_count += 1
+                    # Back pressed, stalled too long (any stuck/error screen), or the player
+                    # was exited -> return to Kodi so the user is never trapped.
+                    if st.get('b') or stuck > 50 or (was_watching and not on_watch):
                         try:
                             window.evaluate_js('window.__TOKODI=0;var v=document.querySelector("video");'
                                                'if(v){try{v.pause();}catch(e){}}')
@@ -761,6 +777,7 @@ def window_monitor(window):
                         _hide_to_kodi(window)
                         was_watching = False
                         reload_count = 0
+                        stuck = 0
                 elif AUTH_SHOWN[0]:
                     ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
                     if ctx.get('locoRoot'):
