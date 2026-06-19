@@ -88,6 +88,12 @@ HIDE_JS = ('if(!document.getElementById("nf-noscroll")){var s=document.createEle
            's.id="nf-noscroll";s.textContent="::-webkit-scrollbar{display:none !important}'
            'html,body{overflow:hidden !important}";(document.head||document.documentElement).appendChild(s);}')
 
+# During playback the fullscreen WebView has focus; Netflix doesn't treat Back/Esc as
+# "return to Kodi", so we capture those keys and flag window.__TOKODI for the monitor.
+BACK_KEY_JS = ('if(!window.__BKL){window.__BKL=1;document.addEventListener("keydown",function(e){'
+               'if(e.key==="Escape"||e.key==="Backspace"||e.key==="BrowserBack"||e.key==="GoBack"'
+               '||e.keyCode===8||e.keyCode===166){window.__TOKODI=1;}},true);}')
+
 
 SESSION_OUT = os.environ.get('NF_SESSION_OUT')
 # Netflix exposes the shakti session in the page's react context once signed in.
@@ -350,6 +356,7 @@ def _genre(window, gid, timeout=25):
         except Exception:
             pass
         time.sleep(1)
+    _focus_kodi()
     return result   # window stays off-screen (rendered there); no flash
 
 
@@ -377,6 +384,7 @@ def _go_home(window, timeout=30):
         except Exception:
             pass
         time.sleep(1)
+    _focus_kodi()
     return result   # window stays off-screen (rendered there); no flash
 
 
@@ -433,6 +441,43 @@ def _render_offscreen(window):
         pass
     try:
         window.move(-4000, -4000)
+    except Exception:
+        pass
+
+
+def _focus_kodi():
+    """Give the keyboard/remote focus back to Kodi when the daemon window goes off-screen
+    (after login / Back / returning to browse), so no mouse click is needed. Finds Kodi's
+    window by its process (kodi.exe) rather than a window-class guess."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        k = ctypes.windll.kernel32
+        found = [None]
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        def _cb(hwnd, _lp):
+            if not u.IsWindowVisible(hwnd):
+                return True
+            pid = wintypes.DWORD()
+            u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            h = k.OpenProcess(0x1000, False, pid.value)  # QUERY_LIMITED_INFORMATION
+            if h:
+                buf = ctypes.create_unicode_buffer(260)
+                size = wintypes.DWORD(260)
+                try:
+                    if k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)) \
+                            and buf.value.lower().endswith('kodi.exe'):
+                        found[0] = hwnd
+                finally:
+                    k.CloseHandle(h)
+            return found[0] is None
+        u.EnumWindows(_cb, 0)
+        if found[0]:
+            u.ShowWindow(found[0], 9)          # SW_RESTORE
+            u.SetForegroundWindow(found[0])
+            u.SetActiveWindow(found[0])
     except Exception:
         pass
 
@@ -561,6 +606,7 @@ def injector(window):
         try:
             with _rpc_lock:
                 window.evaluate_js(HIDE_JS)
+                window.evaluate_js(BACK_KEY_JS)
                 if LOAD_JS:
                     window.evaluate_js(LOAD_JS)
                 if STYLE_JS:
@@ -618,14 +664,27 @@ def window_monitor(window):
                     url = window.evaluate_js('location.href') or ''
                     if '/watch/' in url:
                         was_watching = True
-                    elif was_watching:
+                    back = False
+                    try:
+                        back = bool(window.evaluate_js('window.__TOKODI'))
+                    except Exception:
+                        pass
+                    # Back pressed, or the player was exited (left /watch) -> return to Kodi
+                    if back or (was_watching and '/watch/' not in url):
+                        try:
+                            window.evaluate_js('window.__TOKODI=0;var v=document.querySelector("video");'
+                                               'if(v){try{v.pause();}catch(e){}}')
+                        except Exception:
+                            pass
                         _set_fullscreen(window, False)
                         _render_offscreen(window)
+                        _focus_kodi()
                         was_watching = False
                 elif AUTH_SHOWN[0]:
                     ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
                     if ctx.get('locoRoot'):
                         _render_offscreen(window)
+                        _focus_kodi()
                         AUTH_SHOWN[0] = False
             except Exception:
                 pass
