@@ -39,6 +39,22 @@ def _audio_marker():
     return os.path.join(profile_dir(), 'audio_saved.json')
 
 
+def stop_playback():
+    """Stop any video Kodi is itself playing, so the embedded Netflix player isn't
+    competing with Kodi for the audio/video device (which otherwise fails -> D7361)."""
+    import time
+    try:
+        p = xbmc.Player()
+        if p.isPlaying():
+            p.stop()
+            for _ in range(20):                # wait up to ~2s for the device to free
+                if not p.isPlaying():
+                    break
+                time.sleep(0.1)
+    except Exception as exc:  # noqa
+        log('stop_playback failed: {0}'.format(exc))
+
+
 def release_audio():
     """Prepare Kodi for embedded playback: (1) free the HDMI audio device — Kodi's
     passthrough / keep-device-alive hold it exclusively so the player can't open audio

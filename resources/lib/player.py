@@ -275,6 +275,7 @@ def play(video_id):
     # Embedded uses the WebView daemon: the bundled exe on Windows, else a configured
     # python + pywebview host (works on macOS/Linux too, where it is less tested).
     if mode == 'embedded' and _webview_cmd():
+        kodiutils.stop_playback()   # stop any local Kodi video so it doesn't compete
         kodiutils.release_audio()   # free the (passthrough/exclusive) audio device first
         _play_embedded(video_id)
     else:
