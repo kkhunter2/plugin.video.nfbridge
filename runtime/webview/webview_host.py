@@ -431,18 +431,69 @@ def _set_fullscreen(window, on):
         pass
 
 
-def _render_offscreen(window):
-    """Move the window OFF-SCREEN so akira keeps rendering (loads data) with no visible
-    flash. Uses pywebview move()/show() which marshal to the GUI thread — cross-thread
-    Win32 calls on the WebView HWND crash WebView2 under rapid navigation."""
+def _own_hwnd():
+    """The daemon's own top-level WebView window (current process)."""
     try:
-        window.show()
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        k = ctypes.windll.kernel32
+        mypid = k.GetCurrentProcessId()
+        found = [0]
+
+        @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        def _cb(hwnd, _lp):
+            if not u.IsWindowVisible(hwnd):
+                return True
+            pid = wintypes.DWORD()
+            u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if pid.value == mypid and u.GetWindow(hwnd, 4) == 0:  # GW_OWNER==4 -> top-level
+                found[0] = hwnd
+                return False
+            return True
+        u.EnumWindows(_cb, 0)
+        return found[0]
+    except Exception:
+        return 0
+
+
+def _render_offscreen(window):
+    """Show the window OFF-SCREEN so it keeps rendering, WITHOUT activating it (so Kodi
+    keeps keyboard focus). SW_SHOWNOACTIVATE + a no-activate move; falls back to pywebview."""
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        hwnd = _own_hwnd()
+        if hwnd:
+            u.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE (un-minimize / show, no focus steal)
+            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0014)  # NOACTIVATE|NOZORDER
+            return
     except Exception:
         pass
     try:
         window.move(-4000, -4000)
     except Exception:
         pass
+
+
+def _hide_to_kodi(window):
+    """Release foreground to Kodi after the window held it (login / Back / play): minimize
+    (Windows hands focus to the window behind = Kodi), then re-show off-screen WITHOUT
+    activating so it still renders for browse."""
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        hwnd = _own_hwnd()
+        if hwnd:
+            u.ShowWindow(hwnd, 6)   # SW_MINIMIZE -> foreground goes to Kodi behind it
+            u.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE -> back off-screen, keep focus on Kodi
+            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0014)
+    except Exception:
+        try:
+            window.minimize()
+        except Exception:
+            pass
+    _focus_kodi()
 
 
 def _focus_kodi():
@@ -665,7 +716,7 @@ def _auto_minimize(window):
         time.sleep(1)
 
 
-AUTH_SHOWN = [False]   # window is surfaced for login / profile pick / first load
+AUTH_SHOWN = [True]    # release focus to Kodi once home is reached (first load too)
 
 
 def window_monitor(window):
@@ -675,7 +726,7 @@ def window_monitor(window):
       - while playing fullscreen: when the user leaves the player (Back -> not /watch)
         -> drop fullscreen and minimize so Kodi returns to the front."""
     was_watching = False
-    reload_done = False
+    reload_count = 0
     while True:
         # non-blocking: only touch the window when no RPC handler holds the lock,
         # so the monitor never races a navigation (which crashes WebView2).
@@ -689,10 +740,10 @@ def window_monitor(window):
                     if '/watch/' in url:
                         was_watching = True
                         if st.get('v'):
-                            reload_done = False            # playing fine
-                        elif st.get('e') and not reload_done:
-                            window.evaluate_js('location.reload()')  # transient D7xxx -> reload once
-                            reload_done = True
+                            reload_count = 0               # playing fine
+                        elif st.get('e') and reload_count < 3:
+                            window.load_url(url)           # transient D7xxx -> re-navigate fresh
+                            reload_count += 1
                     # Back pressed, or the player was exited (left /watch) -> return to Kodi
                     if st.get('b') or (was_watching and '/watch/' not in url):
                         try:
@@ -701,15 +752,13 @@ def window_monitor(window):
                         except Exception:
                             pass
                         _set_fullscreen(window, False)
-                        _render_offscreen(window)
-                        _focus_kodi()
+                        _hide_to_kodi(window)
                         was_watching = False
-                        reload_done = False
+                        reload_count = 0
                 elif AUTH_SHOWN[0]:
                     ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
                     if ctx.get('locoRoot'):
-                        _render_offscreen(window)
-                        _focus_kodi()
+                        _hide_to_kodi(window)
                         AUTH_SHOWN[0] = False
             except Exception:
                 pass
