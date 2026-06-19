@@ -474,10 +474,30 @@ def _focus_kodi():
                     k.CloseHandle(h)
             return found[0] is None
         u.EnumWindows(_cb, 0)
-        if found[0]:
-            u.ShowWindow(found[0], 9)          # SW_RESTORE
-            u.SetForegroundWindow(found[0])
-            u.SetActiveWindow(found[0])
+        hwnd = found[0]
+        if not hwnd:
+            return
+        # Windows blocks SetForegroundWindow from a background process; an Alt key tap +
+        # AttachThreadInput (attach the current foreground thread to Kodi's) unlocks it.
+        fg = u.GetForegroundWindow()
+        tgt = u.GetWindowThreadProcessId(hwnd, None)
+        cur = k.GetCurrentThreadId()
+        fgt = u.GetWindowThreadProcessId(fg, None) if fg else 0
+        attached = []
+        for a in (cur, fgt):
+            if a and a != tgt and u.AttachThreadInput(a, tgt, True):
+                attached.append(a)
+        try:
+            u.keybd_event(0x12, 0, 0, 0)       # ALT down
+            u.keybd_event(0x12, 0, 0x0002, 0)  # ALT up
+            u.ShowWindow(hwnd, 9)              # SW_RESTORE
+            u.BringWindowToTop(hwnd)
+            u.SetForegroundWindow(hwnd)
+            u.SetActiveWindow(hwnd)
+            u.SetFocus(hwnd)
+        finally:
+            for a in attached:
+                u.AttachThreadInput(a, tgt, False)
     except Exception:
         pass
 
@@ -655,22 +675,26 @@ def window_monitor(window):
       - while playing fullscreen: when the user leaves the player (Back -> not /watch)
         -> drop fullscreen and minimize so Kodi returns to the front."""
     was_watching = False
+    reload_done = False
     while True:
         # non-blocking: only touch the window when no RPC handler holds the lock,
         # so the monitor never races a navigation (which crashes WebView2).
         if _rpc_lock.acquire(blocking=False):
             try:
                 if _FS[0]:
-                    url = window.evaluate_js('location.href') or ''
+                    st = json.loads(window.evaluate_js(
+                        'JSON.stringify({u:location.href,v:!!document.querySelector("video"),'
+                        'e:/D7\\d{3}/.test(document.body.innerText),b:!!window.__TOKODI})') or '{}')
+                    url = st.get('u', '')
                     if '/watch/' in url:
                         was_watching = True
-                    back = False
-                    try:
-                        back = bool(window.evaluate_js('window.__TOKODI'))
-                    except Exception:
-                        pass
+                        if st.get('v'):
+                            reload_done = False            # playing fine
+                        elif st.get('e') and not reload_done:
+                            window.evaluate_js('location.reload()')  # transient D7xxx -> reload once
+                            reload_done = True
                     # Back pressed, or the player was exited (left /watch) -> return to Kodi
-                    if back or (was_watching and '/watch/' not in url):
+                    if st.get('b') or (was_watching and '/watch/' not in url):
                         try:
                             window.evaluate_js('window.__TOKODI=0;var v=document.querySelector("video");'
                                                'if(v){try{v.pause();}catch(e){}}')
@@ -680,6 +704,7 @@ def window_monitor(window):
                         _render_offscreen(window)
                         _focus_kodi()
                         was_watching = False
+                        reload_done = False
                 elif AUTH_SHOWN[0]:
                     ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
                     if ctx.get('locoRoot'):
