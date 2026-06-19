@@ -35,28 +35,22 @@ def _font_dirs():
 
 
 def resolve_font_path():
-    """Return the path to the configured subtitle font (TTF/OTF), or None.
+    """Return the path to the EXPLICITLY configured subtitle font (TTF/OTF), or None.
 
-    Order: the exact font named in `subtitles.fontname`; else, if a user font
-    exists in home media/Fonts, the first one; else None (Netflix default font).
+    Only honours `subtitles.fontname`. If it is unset (DEFAULT) we return None so the
+    embedded player keeps Netflix's own subtitle font — we do NOT guess a font from
+    media/Fonts (that surprised users by applying a leftover font they never chose).
     """
     name = _get('subtitles.fontname')
-    candidates = []
-    if name and name not in ('DEFAULT', 'Default'):
-        candidates = [name, name + '.ttf', name + '.otf', name + '.TTF']
+    if not name or name in ('DEFAULT', 'Default'):
+        return None
     for d in _font_dirs():
         if not os.path.isdir(d):
             continue
-        for c in candidates:
+        for c in (name, name + '.ttf', name + '.otf', name + '.TTF'):
             p = os.path.join(d, c)
             if os.path.isfile(p):
                 return p
-    # fallback: first user font in home media/Fonts
-    home = _font_dirs()[0]
-    if os.path.isdir(home):
-        for f in sorted(os.listdir(home)):
-            if f.lower().endswith(('.ttf', '.otf')):
-                return os.path.join(home, f)
     return None
 
 
