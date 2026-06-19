@@ -424,8 +424,9 @@ def _set_fullscreen(window, on):
             sw = u.GetSystemMetrics(0)
             sh = u.GetSystemMetrics(1)
             u.SetWindowLongW(hwnd, GWL_STYLE, -2147483648 | 0x10000000)  # WS_POPUP|WS_VISIBLE
-            # HWND_TOPMOST(-1), 2px overscan each side, FRAMECHANGED|SHOWWINDOW
-            u.SetWindowPos(hwnd, -1, -2, -2, sw + 4, sh + 4, 0x0020 | 0x0040)
+            # HWND_TOP(0) not TOPMOST: cover the screen but still let Alt+Tab bring another
+            # window in front. 2px overscan each side, FRAMECHANGED|SHOWWINDOW.
+            u.SetWindowPos(hwnd, 0, -2, -2, sw + 4, sh + 4, 0x0020 | 0x0040)
             _FS[0] = True
         elif not on and _FS[0]:
             u.SetWindowLongW(hwnd, GWL_STYLE, _PREV_STYLE[0] or 0x00CF0000)
@@ -744,19 +745,6 @@ def window_monitor(window):
                     has_video = bool(st.get('v'))
                     if on_watch:
                         was_watching = True
-                    # Keep the play window focused so Back / player keys reach it. Only act
-                    # when it lost the foreground (so normal playback isn't disturbed).
-                    if not has_video:
-                        try:
-                            import ctypes
-                            u = ctypes.windll.user32
-                            u.GetForegroundWindow.restype = ctypes.c_void_p
-                            fg = u.GetForegroundWindow()
-                            own = _own_hwnd()
-                            if own and (not fg or int(fg) != int(own)):
-                                _force_foreground(own)
-                        except Exception:
-                            pass
                     if has_video:
                         reload_count = 0
                         stuck = 0
