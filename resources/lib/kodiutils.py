@@ -82,12 +82,29 @@ def add_directory(label, url, art=None, info=None, is_folder=True, playable=Fals
         li.setArt(art)
     if info:
         tag = li.getVideoInfoTag()
-        if 'title' in info:
+        if info.get('title'):
             tag.setTitle(info['title'])
-        if 'plot' in info:
+        if info.get('plot'):
             tag.setPlot(info['plot'])
-        if 'mediatype' in info:
+        if info.get('mediatype'):
             tag.setMediaType(info['mediatype'])
+        try:
+            if info.get('season') is not None:
+                tag.setSeason(int(info['season']))
+            if info.get('episode') is not None:
+                tag.setEpisode(int(info['episode']))
+            if info.get('year'):
+                tag.setYear(int(info['year']))
+            if info.get('duration'):
+                tag.setDuration(int(info['duration']))
+            if info.get('mpaa'):
+                tag.setMpaa(str(info['mpaa']))
+            if info.get('playcount'):
+                tag.setPlaycount(int(info['playcount']))
+            if info.get('resume'):
+                tag.setResumePoint(float(info['resume'][0]), float(info['resume'][1]))
+        except Exception as exc:  # noqa
+            log('info tag set failed: {0}'.format(exc))
     # Playable titles are launched externally (Layer 2). They are NOT Kodi-playable,
     # so we mark them as plain action items: clicking runs the plugin's play route.
     if playable:

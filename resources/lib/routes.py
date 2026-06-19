@@ -19,10 +19,11 @@ def _add_item(v):
             v['title'] or v['id'], kodiutils.url_for(action='show', id=v['id']),
             art=art, info={'title': v['title'], 'mediatype': 'tvshow'}, is_folder=True)
     else:
+        info = _watch_info({'title': v['title'], 'mediatype': 'movie'},
+                           v.get('bookmark'), v.get('runtime'))
         kodiutils.add_directory(
             v['title'] or v['id'], kodiutils.url_for(action='play', id=v['id']),
-            art=art, info={'title': v['title'], 'mediatype': 'movie'},
-            is_folder=False, playable=True)
+            art=art, info=info, is_folder=False, playable=True)
 
 
 # ---------------------------------------------------------------- routes ------
@@ -185,15 +186,29 @@ def search():
     kodiutils.end_directory(content='movies')
 
 
+def _watch_info(info, bookmark, runtime):
+    """Mark watched (playcount) or in-progress (resume point) from the Netflix bookmark."""
+    if bookmark and runtime:
+        if bookmark >= runtime * 0.9:
+            info['playcount'] = 1
+        elif bookmark > 0:
+            info['resume'] = (bookmark, runtime)
+    return info
+
+
 def _render_episodes(eps):
     for e in eps:
         title = e.get('title') or e['id']
         label = 'E{0}  {1}'.format(e['number'], title) if e.get('number') else title
+        info = _watch_info({'title': e.get('title'), 'mediatype': 'episode',
+                            'plot': e.get('synopsis'), 'season': e.get('season'),
+                            'episode': e.get('number'), 'year': e.get('year'),
+                            'duration': e.get('runtime'), 'mpaa': e.get('rating')},
+                           e.get('bookmark'), e.get('runtime'))
         kodiutils.add_directory(
             label, kodiutils.url_for(action='play', id=e['id']),
             art={'thumb': e.get('art'), 'poster': e.get('art')},
-            info={'title': e.get('title'), 'mediatype': 'episode'},
-            is_folder=False, playable=True)
+            info=info, is_folder=False, playable=True)
     kodiutils.end_directory(content='episodes')
 
 

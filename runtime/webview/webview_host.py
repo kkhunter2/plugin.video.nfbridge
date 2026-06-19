@@ -267,13 +267,14 @@ def _episodes_get(window, vid, timeout=15):
     if not meta:
         return []
 
+    rng = {'from': 0, 'to': 60}
     result = []
     for sm in meta:
         sid = sm['id']
         eps = []
         try:
-            fj = _falcor_get(window, [['seasons', sid, 'episodes',
-                                       {'from': 0, 'to': 60}, 'itemSummary']], 15)
+            fj = _falcor_get(window, [['seasons', sid, 'episodes', rng, 'itemSummary'],
+                                      ['seasons', sid, 'episodes', rng, 'synopsis']], 15)
             node = (fj.get('json') or {}).get('seasons', {}).get(sid, {}).get('episodes', {})
             for k, cell in node.items():
                 if not (isinstance(k, str) and k.isdigit()) or not isinstance(cell, dict):
@@ -281,15 +282,29 @@ def _episodes_get(window, vid, timeout=15):
                 it = cell.get('itemSummary') or {}
                 path = cell.get('$__path') or []
                 epid = str(path[1]) if len(path) > 1 else (str(it.get('id')) if it.get('id') else None)
-                if epid:
-                    eps.append({'id': epid, 'number': it.get('episode')})
+                if not epid:
+                    continue
+                syn = cell.get('synopsis')
+                if isinstance(syn, dict):
+                    syn = syn.get('text')
+                try:
+                    art = (it.get('boxArt') or {}).get('url')
+                except Exception:
+                    art = None
+                try:
+                    rating = (((it.get('maturity') or {}).get('rating')) or {}).get('value')
+                except Exception:
+                    rating = None
+                eps.append({'id': epid, 'title': it.get('title'), 'number': it.get('episode'),
+                            'season': it.get('season'), 'year': it.get('releaseYear'),
+                            'runtime': it.get('infoDensityRuntime'), 'art': art,
+                            'synopsis': syn, 'rating': rating})
             eps.sort(key=lambda e: e.get('number') or 0)
             if eps:
-                tj = _falcor_get(window, [['videos', e['id'], 'title'] for e in eps], 15)
-                tv = (tj.get('json') or {}).get('videos', {})
+                bj = _falcor_get(window, [['videos', e['id'], 'bookmarkPosition'] for e in eps], 15)
+                bv = (bj.get('json') or {}).get('videos', {})
                 for e in eps:
-                    e['title'] = tv.get(e['id'], {}).get('title')
-                    e['art'] = None
+                    e['bookmark'] = (bv.get(e['id'], {}) or {}).get('bookmarkPosition')
         except Exception:
             pass
         result.append({'id': sid, 'title': sm.get('title'), 'number': sm.get('number'), 'eps': eps})
@@ -637,6 +652,47 @@ def on_start(window):
 if not os.path.isdir(CACHE):
     os.makedirs(CACHE)
 _profile = os.environ.get('NF_PROFILE') or os.path.join(CACHE, 'profile')
+
+
+def _cleanup_stale(profile, port):
+    """A force-killed/crashed daemon leaves orphaned msedgewebview2 children holding the
+    profile lock, so the next launch fails with 'Main window failed to start'. If no
+    live daemon owns the RPC port, kill our orphaned WebView2 children and clear the
+    lock so this fresh start succeeds."""
+    import socket
+    s = socket.socket()
+    s.settimeout(0.5)
+    try:
+        s.connect(('127.0.0.1', int(port)))
+        s.close()
+        return   # a live daemon already owns the port -> those children are ITS, leave them
+    except Exception:
+        try:
+            s.close()
+        except Exception:
+            pass
+    tag = 'plugin.video.nfbridge'
+    if tag in profile:
+        try:
+            import subprocess
+            ps = ("Get-CimInstance Win32_Process -Filter \"name='msedgewebview2.exe'\" | "
+                  "Where-Object { $_.CommandLine -like '*%s*' } | "
+                  "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }" % tag)
+            subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', ps],
+                           capture_output=True, timeout=15, creationflags=0x08000000)
+        except Exception:
+            pass
+    for lf in (os.path.join(profile, 'EBWebView', 'Default', 'LOCK'),
+               os.path.join(profile, 'EBWebView', 'lockfile')):
+        try:
+            os.remove(lf)
+        except OSError:
+            pass
+
+
+if RPC_PORT:
+    _cleanup_stale(_profile, RPC_PORT)
+
 # The browse daemon lives OFF-SCREEN: a hidden/minimized window does NOT render (akira
 # never prefetches), but a window positioned off-screen DOES render while staying
 # invisible -> data loads with no flash. /play and /show move it on-screen.

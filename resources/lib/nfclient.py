@@ -224,9 +224,16 @@ class NetflixClient:
         # has rendered and None otherwise.
         vj = self.falcor([['videos', vid, 'title'] for vid in ids]).get('videos', {})
         artmap = self.art(ids)
+        try:
+            brj = self.falcor([['videos', vid, ['bookmarkPosition', 'runtime']]
+                               for vid in ids]).get('videos', {})
+        except Exception:
+            brj = {}
         out = []
         for vid in ids:
+            b = brj.get(vid, {}) or {}
             out.append({'id': vid, 'title': _txt(vj.get(vid, {}).get('title')),
                         'type': meta[vid].get('type'), 'art': artmap.get(vid),
-                        'isOriginal': meta[vid].get('isOriginal')})
+                        'isOriginal': meta[vid].get('isOriginal'),
+                        'bookmark': b.get('bookmarkPosition'), 'runtime': b.get('runtime')})
         return out
