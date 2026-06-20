@@ -177,46 +177,50 @@ def _nav_queue(act):
 
 _NAV_FN = {'ok': 'ok()', 'left': 'move(-1)', 'right': 'move(1)', 'exit': 'exit()'}
 
-# Injected once. __NFNAV.ok(): click a visible Skip/Next button, else open the OSD (highlight
-# play-pause / subtitle button), else click the highlighted control. move(±1): step the
-# highlight (audio/subtitle panel items when its panel is open, else the control bar). Each
-# returns 1 if the OSD is now active, 0 if not. exit() closes the OSD (and the panel).
-NAV_JS = r'''if(!window.__NFNAV){window.__NFNAV=(function(){
-var SKIP=["[data-uia='player-skip-intro']","[data-uia='player-skip-recap']","[data-uia*='skip']","[data-uia*='next-episode-seamless']"];
-var active=false,idx=0,items=[];
-function vis(e){if(!e)return false;var r=e.getBoundingClientRect();return r.width>0&&r.height>0;}
-function fv(s){for(var i=0;i<s.length;i++){var e=document.querySelector(s[i]);if(vis(e))return e;}return null;}
-function panel(){return vis(document.querySelector("[data-uia='selector-audio-subtitle']"));}
-function bar(){var v=document.querySelector("video");var t=(v&&v.parentElement)||document.body;
-try{t.dispatchEvent(new MouseEvent("mousemove",{bubbles:true,clientX:200,clientY:200}));}catch(e){}}
-function collect(){items=[];
-if(panel()){document.querySelectorAll("[data-uia^='audio-item-'],[data-uia^='subtitle-item-']").forEach(function(e){if(vis(e))items.push(e);});}
-else{["[data-uia^='control-play-pause']","[data-uia='control-audio-subtitle']"].forEach(function(q){
-document.querySelectorAll(q).forEach(function(e){if(vis(e)&&items.indexOf(e)<0)items.push(e);});});}}
-function clr(){document.querySelectorAll(".__nfhl").forEach(function(e){e.classList.remove("__nfhl");
-e.style.outline="";e.style.outlineOffset="";e.style.background="";});}
-function hl(){clr();var e=items[idx];if(e){e.classList.add("__nfhl");e.style.outline="3px solid #e50914";
-e.style.outlineOffset="-3px";e.style.background="rgba(229,9,20,0.30)";try{e.scrollIntoView({block:"nearest"});}catch(_){}}}
-function open(){bar();active=true;idx=0;collect();hl();}
-return{
-ok:function(){var s=fv(SKIP);if(s){s.click();active=false;clr();return 0;}
-if(!active){open();return 1;}
-var e=items[idx];if(e)e.click();bar();idx=0;collect();hl();
-if(!items.length){active=false;clr();return 0;}return 1;},
-move:function(d){if(!active){open();return 1;}bar();collect();
-if(!items.length)return 1;idx=(idx+d+items.length)%items.length;hl();return 1;},
-exit:function(){var p=panel();active=false;clr();
-if(p){var b=document.querySelector("[data-uia='control-audio-subtitle']");if(b)b.click();}return 0;}
-};})();}'''
+_OSD_LOG = os.path.join(os.environ.get('TEMP') or os.environ.get('TMP') or '.', 'nfbridge_osd.log')
 
-# Netflix renders the control bar only AFTER a mouse move, asynchronously — so the handler
-# nudges it (unless the audio/subtitle panel is already up) and waits a beat before reading
-# it, otherwise the first OK opens an empty OSD with nothing highlighted.
-_SHOWBAR_JS = ("(function(){if(document.querySelector(\"[data-uia='selector-audio-subtitle']\"))return;"
-               "var v=document.querySelector('video');var t=(v&&v.parentElement)||document.body;"
-               "try{t.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:200,clientY:200}));"
-               "t.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:213,clientY:208}));}"
-               "catch(e){}})()")
+
+def _osd_log(msg):
+    try:
+        with open(_OSD_LOG, 'a', encoding='utf-8') as fh:
+            fh.write(msg + '\n')
+    except Exception:
+        pass
+
+# Injected once. A self-contained OSD overlay built from OUR OWN DOM — immune to Netflix's
+# "minimized" player view (its controls aren't even mounted) and its hardening against
+# synthetic events. Navigation drives the Netflix INTERNAL player API directly (play/pause,
+# subtitle tracks incl. off, next episode), so nothing depends on Netflix's own UI.
+# ok()/move()/exit() return "1:.."/"0:.." = OSD active or not.
+NAV_JS = r'''if(!window.__NFNAV){window.__NFNAV=(function(){
+function P(){try{var vp=netflix.appContext.state.playerApp.getAPI().videoPlayer;
+var ids=vp.getAllPlayerSessionIds();var sid=ids.filter(function(s){return /watch/.test(s);})[0]||ids[0];
+return vp.getVideoPlayerBySessionId(sid);}catch(e){return null;}}
+var active=false,level=0,idx=0,cache=[],EL=null;
+function el(){if(EL&&document.body.contains(EL))return EL;
+EL=document.createElement("div");EL.id="__nfosd";
+EL.style.cssText="position:fixed;left:50%;bottom:9%;transform:translateX(-50%);z-index:2147483647;background:rgba(0,0,0,0.88);border-radius:12px;padding:10px 0;min-width:380px;max-height:64%;overflow:auto;font-family:Arial,sans-serif;font-size:23px;color:#fff;box-shadow:0 4px 40px rgba(0,0,0,.9);";
+(document.fullscreenElement||document.body).appendChild(EL);return EL;}
+function build(){var p=P();cache=[];
+if(level===0){var paused=false;try{paused=p&&p.getPaused();}catch(e){}
+cache.push({t:(paused?"▶  재생":"❙❙  일시정지"),f:function(){var q=P();try{if(q.getPaused())q.play();else q.pause();}catch(e){}build();draw();}});
+cache.push({t:"자막  ›",f:function(){level=1;idx=0;build();draw();}});
+cache.push({t:"다음 화",f:function(){var q=P();try{q.playNextEpisode();}catch(e){}hide();}});}
+else{cache.push({t:"‹  뒤로",f:function(){level=0;idx=1;build();draw();}});
+try{var list=p.getTimedTextTrackList();var cur=null;try{cur=p.getTimedTextTrack();}catch(e){}
+var cid=cur&&(cur.trackId||cur.id);
+list.forEach(function(tr){var tid=tr.trackId||tr.id;var on=(tid===cid);
+cache.push({t:(on?"● ":"  ")+(tr.displayName||tr.bcp47||tr.language||"?"),f:function(){var q=P();try{q.setTimedTextTrack(tr);}catch(e){}level=0;idx=1;build();draw();}});});}catch(e){}}}
+function draw(){var d=el();if(idx>=cache.length)idx=cache.length-1;if(idx<0)idx=0;
+var h="";cache.forEach(function(it,i){h+="<div style='padding:9px 28px;white-space:nowrap;"+(i===idx?"background:#e50914;color:#fff;":"color:#dcdcdc;")+"'>"+it.t+"</div>";});
+d.innerHTML=h;d.style.display="block";var sel=d.children[idx];if(sel){try{sel.scrollIntoView({block:"nearest"});}catch(e){}}}
+function hide(){active=false;if(EL)EL.style.display="none";}
+function open(){active=true;level=0;idx=0;build();draw();}
+return{
+ok:function(){if(!active){open();return "1:open";}var it=cache[idx];if(it&&it.f)it.f();return active?"1:ok":"0:ok";},
+move:function(d){if(!active){open();return "1:open";}idx=(idx+d+cache.length)%cache.length;draw();return "1:m"+idx;},
+exit:function(){if(level===1){level=0;idx=1;build();draw();return "1:back";}hide();return "0:exit";}
+};})();}'''
 try:
     # restart the daemon on code change OR subtitle-font change (the font is applied at
     # launch, so a running daemon must relaunch to pick up a newly chosen font).
@@ -856,16 +860,6 @@ def _nav_handler(window):
         _NAV_EV.clear()
         while _NAV_Q:
             act = _NAV_Q.pop(0)
-            if act in ('ok', 'left', 'right'):
-                # surface the control bar and let it (or an opening panel) render first
-                if _rpc_lock.acquire(timeout=2):
-                    try:
-                        window.evaluate_js(_SHOWBAR_JS)
-                    except Exception:
-                        pass
-                    finally:
-                        _rpc_lock.release()
-                time.sleep(0.35)   # let the control bar mount/render before we read it
             res = None
             if _rpc_lock.acquire(timeout=2):
                 try:
@@ -874,12 +868,12 @@ def _nav_handler(window):
                     res = None
                 finally:
                     _rpc_lock.release()
-            if res is not None:
-                r = str(res)
-                if r == '1':
-                    _NAV[0] = True
-                elif r == '0':
-                    _NAV[0] = False
+            _osd_log('%s -> %r  (_FS=%s)' % (act, res, _FS[0]))
+            r = str(res)
+            if r.startswith('1:'):
+                _NAV[0] = True
+            elif r.startswith('0:'):
+                _NAV[0] = False
             _NAV_LAST[0] = time.time()
         if _NAV[0] and time.time() - _NAV_LAST[0] > 5:
             if _rpc_lock.acquire(timeout=2):
