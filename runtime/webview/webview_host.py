@@ -87,10 +87,12 @@ STYLE_JS = ('if(!document.getElementById("nf-subfont")){var s=document.createEle
 # Hide the scrollbar AND most Netflix player controls, keeping only the seek bar
 # (timeline*) and the play/pause button. Each control has a stable data-uia, so showing/
 # hiding any of them is just editing this list.
+# Keep the seek bar, play/pause, time, AND the audio/subtitle button (so subtitles can be
+# turned off / switched). Hide the rest.
 _CONTROL_HIDE = (
     "[data-uia='control-nav-back'],[data-uia='control-flag'],[data-uia='control-back10'],"
     "[data-uia='control-forward10'],[data-uia^='control-volume'],[data-uia='control-next'],"
-    "[data-uia='control-episodes'],[data-uia='control-audio-subtitle'],[data-uia='control-speed'],"
+    "[data-uia='control-episodes'],[data-uia='control-speed'],"
     "[data-uia^='control-fullscreen'],[data-uia='video-title']"
     "{display:none !important}")
 HIDE_JS = ('if(!document.getElementById("nf-noscroll")){var s=document.createElement("style");'
@@ -156,16 +158,65 @@ _rpc_lock = threading.RLock()
 _rpc_counter = [0]
 _ready = [False]   # last-known readiness; /health returns it without blocking
 _BACK_FLAG = [False]    # low-level keyboard hook sets this when Back is pressed in playback
-_SKIPNEXT_FLAG = [False]  # ... and this when OK/Enter is pressed in playback
 _HOOK_REFS = []
 
-# Click the visible Skip-Intro / Skip-Recap / seamless Next-Episode overlay button (these
-# are separate from the hidden control bar). Used when OK/Enter is pressed during playback.
-_SKIP_SELS_JS = ("[\"[data-uia='player-skip-intro']\",\"[data-uia='player-skip-recap']\","
-                 "\"[data-uia*='skip']\",\"[data-uia*='next-episode-seamless']\"]")
-CLICK_SKIP_JS = ("(function(){var S=" + _SKIP_SELS_JS + ";for(var i=0;i<S.length;i++){"
-                 "var b=document.querySelector(S[i]);if(b){var r=b.getBoundingClientRect();"
-                 "if(r.width>0&&r.height>0){b.click();return 1;}}}return 0;})()")
+# Kodi-style OSD navigation of the player controls during playback. The low-level keyboard
+# hook can't read the DOM, so it just queues actions; _nav_handler runs them via __NFNAV
+# (injected page controller). _NAV mirrors __NFNAV's active state so the hook knows whether
+# arrow keys should drive the OSD (active) or pass through to Netflix seek/volume (inactive).
+_NAV = [False]
+_NAV_Q = []
+_NAV_EV = threading.Event()
+_NAV_LAST = [0.0]
+
+
+def _nav_queue(act):
+    _NAV_Q.append(act)
+    _NAV_EV.set()
+
+
+_NAV_FN = {'ok': 'ok()', 'left': 'move(-1)', 'right': 'move(1)', 'exit': 'exit()'}
+
+# Injected once. __NFNAV.ok(): click a visible Skip/Next button, else open the OSD (highlight
+# play-pause / subtitle button), else click the highlighted control. move(±1): step the
+# highlight (audio/subtitle panel items when its panel is open, else the control bar). Each
+# returns 1 if the OSD is now active, 0 if not. exit() closes the OSD (and the panel).
+NAV_JS = r'''if(!window.__NFNAV){window.__NFNAV=(function(){
+var SKIP=["[data-uia='player-skip-intro']","[data-uia='player-skip-recap']","[data-uia*='skip']","[data-uia*='next-episode-seamless']"];
+var active=false,idx=0,items=[];
+function vis(e){if(!e)return false;var r=e.getBoundingClientRect();return r.width>0&&r.height>0;}
+function fv(s){for(var i=0;i<s.length;i++){var e=document.querySelector(s[i]);if(vis(e))return e;}return null;}
+function panel(){return vis(document.querySelector("[data-uia='selector-audio-subtitle']"));}
+function bar(){var v=document.querySelector("video");var t=(v&&v.parentElement)||document.body;
+try{t.dispatchEvent(new MouseEvent("mousemove",{bubbles:true,clientX:200,clientY:200}));}catch(e){}}
+function collect(){items=[];
+if(panel()){document.querySelectorAll("[data-uia^='audio-item-'],[data-uia^='subtitle-item-']").forEach(function(e){if(vis(e))items.push(e);});}
+else{["[data-uia^='control-play-pause']","[data-uia='control-audio-subtitle']"].forEach(function(q){
+document.querySelectorAll(q).forEach(function(e){if(vis(e)&&items.indexOf(e)<0)items.push(e);});});}}
+function clr(){document.querySelectorAll(".__nfhl").forEach(function(e){e.classList.remove("__nfhl");
+e.style.outline="";e.style.outlineOffset="";e.style.background="";});}
+function hl(){clr();var e=items[idx];if(e){e.classList.add("__nfhl");e.style.outline="3px solid #e50914";
+e.style.outlineOffset="-3px";e.style.background="rgba(229,9,20,0.30)";try{e.scrollIntoView({block:"nearest"});}catch(_){}}}
+function open(){bar();active=true;idx=0;collect();hl();}
+return{
+ok:function(){var s=fv(SKIP);if(s){s.click();active=false;clr();return 0;}
+if(!active){open();return 1;}
+var e=items[idx];if(e)e.click();bar();idx=0;collect();hl();
+if(!items.length){active=false;clr();return 0;}return 1;},
+move:function(d){if(!active){open();return 1;}bar();collect();
+if(!items.length)return 1;idx=(idx+d+items.length)%items.length;hl();return 1;},
+exit:function(){var p=panel();active=false;clr();
+if(p){var b=document.querySelector("[data-uia='control-audio-subtitle']");if(b)b.click();}return 0;}
+};})();}'''
+
+# Netflix renders the control bar only AFTER a mouse move, asynchronously — so the handler
+# nudges it (unless the audio/subtitle panel is already up) and waits a beat before reading
+# it, otherwise the first OK opens an empty OSD with nothing highlighted.
+_SHOWBAR_JS = ("(function(){if(document.querySelector(\"[data-uia='selector-audio-subtitle']\"))return;"
+               "var v=document.querySelector('video');var t=(v&&v.parentElement)||document.body;"
+               "try{t.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:200,clientY:200}));"
+               "t.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:213,clientY:208}));}"
+               "catch(e){}})()")
 try:
     # restart the daemon on code change OR subtitle-font change (the font is applied at
     # launch, so a running daemon must relaunch to pick up a newly chosen font).
@@ -493,6 +544,8 @@ def _set_fullscreen(window, on):
             u.SetWindowLongW(hwnd, GWL_STYLE, _PREV_STYLE[0] or 0x00CF0000)
             u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0020 | 0x0010)  # FRAMECHANGED|NOACTIVATE
             _FS[0] = False
+            _NAV[0] = False          # leaving playback -> drop any OSD-nav state
+            del _NAV_Q[:]
     except Exception:
         pass
 
@@ -782,6 +835,7 @@ def injector(window):
             with _rpc_lock:
                 window.evaluate_js(HIDE_JS)
                 window.evaluate_js(BACK_KEY_JS)
+                window.evaluate_js(NAV_JS)
                 if LOAD_JS:
                     window.evaluate_js(LOAD_JS)
                 if STYLE_JS:
@@ -791,6 +845,51 @@ def injector(window):
         except Exception:
             pass
         time.sleep(3)
+
+
+def _nav_handler(window):
+    """Run OSD-navigation actions queued by the keyboard hook (which can't touch the DOM).
+    Event-driven so each arrow/OK is near-instant; auto-closes the OSD after a few idle
+    seconds so the arrow keys revert to Netflix seek/volume."""
+    while True:
+        _NAV_EV.wait(timeout=1.0)
+        _NAV_EV.clear()
+        while _NAV_Q:
+            act = _NAV_Q.pop(0)
+            if act in ('ok', 'left', 'right'):
+                # surface the control bar and let it (or an opening panel) render first
+                if _rpc_lock.acquire(timeout=2):
+                    try:
+                        window.evaluate_js(_SHOWBAR_JS)
+                    except Exception:
+                        pass
+                    finally:
+                        _rpc_lock.release()
+                time.sleep(0.35)   # let the control bar mount/render before we read it
+            res = None
+            if _rpc_lock.acquire(timeout=2):
+                try:
+                    res = window.evaluate_js('window.__NFNAV?__NFNAV.%s:-1' % _NAV_FN[act])
+                except Exception:
+                    res = None
+                finally:
+                    _rpc_lock.release()
+            if res is not None:
+                r = str(res)
+                if r == '1':
+                    _NAV[0] = True
+                elif r == '0':
+                    _NAV[0] = False
+            _NAV_LAST[0] = time.time()
+        if _NAV[0] and time.time() - _NAV_LAST[0] > 5:
+            if _rpc_lock.acquire(timeout=2):
+                try:
+                    window.evaluate_js('window.__NFNAV&&__NFNAV.exit()')
+                except Exception:
+                    pass
+                finally:
+                    _rpc_lock.release()
+            _NAV[0] = False
 
 
 # If Netflix shows the "Who's watching?" profile gate there is no home LoCo; pick a
@@ -844,12 +943,6 @@ def window_monitor(window):
                     url = st.get('u', '')
                     on_watch = '/watch/' in url
                     has_video = bool(st.get('v'))
-                    if _SKIPNEXT_FLAG[0]:
-                        _SKIPNEXT_FLAG[0] = False
-                        try:
-                            window.evaluate_js(CLICK_SKIP_JS)   # OK -> Skip Intro / Next if shown
-                        except Exception:
-                            pass
                     if on_watch:
                         was_watching = True
                     if has_video:
@@ -929,12 +1022,20 @@ def _back_hook_thread():
             try:
                 if nCode == 0 and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
                     vk = lParam[0].vkCode
-                    if _FS[0] and vk in (0x1B, 0x08, 0xA6):   # ESC, BACKSPACE, BROWSER_BACK
-                        _BACK_FLAG[0] = True
-                        return 1                              # swallow (Kodi shouldn't also act)
-                    if _FS[0] and vk == 0x0D:                 # Enter/OK -> Skip Intro / Next if shown
-                        _SKIPNEXT_FLAG[0] = True
-                        return 1
+                    if _FS[0]:
+                        if vk in (0x1B, 0x08, 0xA6):          # ESC / Backspace / BrowserBack
+                            if _NAV[0]:
+                                _nav_queue('exit')            # close the OSD, stay in playback
+                            else:
+                                _BACK_FLAG[0] = True          # return to Kodi
+                            return 1                          # swallow (Kodi shouldn't also act)
+                        if vk == 0x0D:                        # OK -> skip / open OSD / activate
+                            _nav_queue('ok')
+                            return 1
+                        if _NAV[0] and vk in (0x25, 0x26, 0x27, 0x28):
+                            # arrows drive the OSD only while it's open; else they pass through
+                            _nav_queue('left' if vk in (0x25, 0x26) else 'right')
+                            return 1
             except Exception:
                 pass
             return u.CallNextHookEx(None, nCode, wParam, lParam)
@@ -956,6 +1057,7 @@ def _back_hook_thread():
 def on_start(window):
     threading.Thread(target=injector, args=(window,), daemon=True).start()
     threading.Thread(target=_back_hook_thread, daemon=True).start()
+    threading.Thread(target=_nav_handler, args=(window,), daemon=True).start()
 
     def _icon_later():
         time.sleep(1.5)            # let the native window exist before stamping the icon
