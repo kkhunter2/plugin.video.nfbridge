@@ -465,6 +465,28 @@ def _own_hwnd():
         return 0
 
 
+def _set_window_icon():
+    """Replace python's default window/taskbar icon with the add-on (Netflix) icon."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.ico')
+        hwnd = _own_hwnd()
+        if not (os.path.exists(ico) and hwnd):
+            return
+        u.LoadImageW.restype = ctypes.c_void_p
+        u.LoadImageW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR, ctypes.c_uint,
+                                 ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        u.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+        hicon = u.LoadImageW(None, ico, 1, 0, 0, 0x00000010 | 0x00000040)  # ICON, LOADFROMFILE|DEFAULTSIZE
+        if hicon:
+            u.SendMessageW(hwnd, 0x0080, 0, hicon)   # WM_SETICON, ICON_SMALL
+            u.SendMessageW(hwnd, 0x0080, 1, hicon)   # WM_SETICON, ICON_BIG
+    except Exception:
+        pass
+
+
 def _render_offscreen(window):
     """Show the window OFF-SCREEN so it keeps rendering, WITHOUT activating it (so Kodi
     keeps keyboard focus). SW_SHOWNOACTIVATE + a no-activate move; falls back to pywebview."""
@@ -795,6 +817,12 @@ def window_monitor(window):
 
 def on_start(window):
     threading.Thread(target=injector, args=(window,), daemon=True).start()
+
+    def _icon_later():
+        time.sleep(1.5)            # let the native window exist before stamping the icon
+        _set_window_icon()
+    threading.Thread(target=_icon_later, daemon=True).start()
+
     if RPC_PORT:
         try:
             _start_rpc(window, RPC_PORT)
@@ -851,6 +879,14 @@ def _cleanup_stale(profile, port):
 
 if RPC_PORT:
     _cleanup_stale(_profile, RPC_PORT)
+
+# Give the process its own taskbar identity so it doesn't group under python's icon
+# (then WM_SETICON's icon is what the taskbar shows).
+try:
+    import ctypes
+    ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID('nfbridge.netflix.webview')
+except Exception:
+    pass
 
 # The browse daemon lives OFF-SCREEN: a hidden/minimized window does NOT render (akira
 # never prefetches), but a window positioned off-screen DOES render while staying
