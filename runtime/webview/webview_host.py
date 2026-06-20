@@ -290,13 +290,23 @@ def _episodes_get(window, vid, timeout=15):
         pass
     meta = []
     sjs = _season_list_js(vid)
-    for _ in range(timeout * 2):
+    title_js = "location.assign('https://www.netflix.com/title/%s')" % str(vid)
+    for i in range(timeout * 2):
         try:
             meta = json.loads(window.evaluate_js(sjs) or '[]')
         except Exception:
             meta = []
         if meta:
             break
+        # /title can bounce to the "Who's watching" gate; pick the profile and reload it
+        try:
+            if i % 4 == 3 and window.evaluate_js('document.querySelectorAll(".profile-link").length'):
+                window.evaluate_js('window.__PSEL=0')
+                window.evaluate_js(SELECT_PROFILE_JS)
+                time.sleep(1.5)
+                window.evaluate_js(title_js)
+        except Exception:
+            pass
         time.sleep(0.5)
     if not meta:
         return []
