@@ -14,16 +14,18 @@ def _add_item(v):
     if not v.get('id'):
         return
     art = {'thumb': v.get('art'), 'poster': v.get('art')}
-    if v.get('type') == 'show':
-        kodiutils.add_directory(
-            v['title'] or v['id'], kodiutils.url_for(action='show', id=v['id']),
-            art=art, info={'title': v['title'], 'mediatype': 'tvshow'}, is_folder=True)
-    else:
+    if v.get('type') == 'movie':
         info = _watch_info({'title': v['title'], 'mediatype': 'movie'},
                            v.get('bookmark'), v.get('runtime'))
         kodiutils.add_directory(
             v['title'] or v['id'], kodiutils.url_for(action='play', id=v['id']),
             art=art, info=info, is_folder=False, playable=True)
+    else:
+        # 'show' OR unknown type (e.g. Top 10 ranked items carry no type) -> open as a
+        # folder; show() falls back to playing it if it turns out to have no episodes.
+        kodiutils.add_directory(
+            v['title'] or v['id'], kodiutils.url_for(action='show', id=v['id']),
+            art=art, info={'title': v['title'], 'mediatype': 'tvshow'}, is_folder=True)
 
 
 # ---------------------------------------------------------------- routes ------
