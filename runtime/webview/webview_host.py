@@ -91,7 +91,7 @@ _CONTROL_HIDE = (
     "[data-uia='control-nav-back'],[data-uia='control-flag'],[data-uia='control-back10'],"
     "[data-uia='control-forward10'],[data-uia^='control-volume'],[data-uia='control-next'],"
     "[data-uia='control-episodes'],[data-uia='control-audio-subtitle'],[data-uia='control-speed'],"
-    "[data-uia^='control-fullscreen'],[data-uia='video-title'],[data-uia='controls-time-remaining']"
+    "[data-uia^='control-fullscreen'],[data-uia='video-title']"
     "{display:none !important}")
 HIDE_JS = ('if(!document.getElementById("nf-noscroll")){var s=document.createElement("style");'
            's.id="nf-noscroll";s.textContent="::-webkit-scrollbar{display:none !important}'
