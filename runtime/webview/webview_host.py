@@ -161,7 +161,7 @@ try:
     # restart the daemon on code change OR subtitle-font change (the font is applied at
     # launch, so a running daemon must relaunch to pick up a newly chosen font).
     _CODE_VER = (str(int(os.path.getmtime(os.path.abspath(__file__))))
-                 + '|' + os.environ.get('NF_FONT_SRC', ''))
+                 + '|' + os.environ.get('NF_FONT_NAME', ''))
 except Exception:
     _CODE_VER = '0'
 
