@@ -445,7 +445,7 @@ def _set_fullscreen(window, on):
             _FS[0] = True
         elif not on and _FS[0]:
             u.SetWindowLongW(hwnd, GWL_STYLE, _PREV_STYLE[0] or 0x00CF0000)
-            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0020 | 0x0010)  # FRAMECHANGED|NOACTIVATE
+            u.SetWindowPos(hwnd, 0, -4000, -4000, 2560, 1440, 0x0020 | 0x0010)  # FRAMECHANGED|NOACTIVATE
             _FS[0] = False
     except Exception:
         pass
@@ -511,7 +511,7 @@ def _render_offscreen(window):
         hwnd = _own_hwnd()
         if hwnd:
             u.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE (un-minimize / show, no focus steal)
-            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0014)  # NOACTIVATE|NOZORDER
+            u.SetWindowPos(hwnd, 0, -4000, -4000, 2560, 1440, 0x0014)  # NOACTIVATE|NOZORDER (wide -> more art tiles render)
             return
     except Exception:
         pass
@@ -969,7 +969,7 @@ except Exception:
 # never prefetches), but a window positioned off-screen DOES render while staying
 # invisible -> data loads with no flash. /play and /show move it on-screen.
 _offscreen = bool(RPC_PORT) and os.environ.get('NF_FULLSCREEN') != '1'
-_win = webview.create_window('Netflix', URL, width=1600, height=900,
+_win = webview.create_window('Netflix', URL, width=2560, height=1440,
                              x=(-4000 if _offscreen else None),
                              y=(-4000 if _offscreen else None),
                              fullscreen=(os.environ.get('NF_FULLSCREEN') == '1'))
