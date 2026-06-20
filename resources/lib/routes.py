@@ -22,9 +22,10 @@ def _add_item(v):
             art=art, info=info, is_folder=False, playable=True)
     else:
         # 'show' OR unknown type (e.g. Top 10 ranked items carry no type) -> open as a
-        # folder; show() falls back to playing it if it turns out to have no episodes.
+        # folder; show() plays it only if it really has no episodes (and isn't a show).
         kodiutils.add_directory(
-            v['title'] or v['id'], kodiutils.url_for(action='show', id=v['id']),
+            v['title'] or v['id'],
+            kodiutils.url_for(action='show', id=v['id'], type=v.get('type') or ''),
             art=art, info={'title': v['title'], 'mediatype': 'tvshow'}, is_folder=True)
 
 
@@ -222,13 +223,27 @@ def show():
     if not c.ensure():
         return kodiutils.end_directory()
     sid = kodiutils.param('id')
+    typ = kodiutils.param('type')
+
+    def _eps():
+        s = c.episodes(sid)
+        if not s:                           # one retry: the daemon may have been mid-navigation
+            import time
+            time.sleep(1)
+            s = c.episodes(sid)
+        return s
     try:
-        seasons = cache.cached('eps_{0}'.format(sid), 600, lambda: c.episodes(sid))
+        # cached_ok never caches an empty result, so a failed load isn't stuck for 600s
+        seasons = cache.cached_ok('eps_{0}'.format(sid), 600, _eps)
     except Exception as exc:  # noqa
         kodiutils.notify('Could not load episodes: {0}'.format(exc))
         return kodiutils.end_directory()
     if not seasons:
-        return player.play(sid)             # movie / no episode list -> play
+        if typ == 'show':
+            # a real series whose episodes failed to load -> DON'T play; let the user retry
+            kodiutils.notify('Could not load episodes - try again')
+            return kodiutils.end_directory()
+        return player.play(sid)             # movie / unknown with no episode list -> play
     if len(seasons) == 1:
         return _render_episodes(seasons[0].get('eps', []))
     for i, s in enumerate(seasons):

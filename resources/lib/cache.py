@@ -42,6 +42,26 @@ def cached(key, ttl, fn):
     return value
 
 
+def cached_ok(key, ttl, fn):
+    """Like cached(), but does NOT store an empty/falsey result, so a transient failure
+    (e.g. episodes that didn't load) isn't cached and the next call retries."""
+    path = os.path.join(_dir(), _safe(key) + '.json')
+    try:
+        if os.path.isfile(path) and (time.time() - os.path.getmtime(path)) < ttl:
+            with open(path, encoding='utf-8') as fh:
+                return json.load(fh)
+    except Exception:
+        pass
+    value = fn()
+    if value:
+        try:
+            with open(path, 'w', encoding='utf-8') as fh:
+                json.dump(value, fh, ensure_ascii=False)
+        except Exception:
+            pass
+    return value
+
+
 def clear():
     import shutil
     try:
