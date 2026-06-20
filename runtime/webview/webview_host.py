@@ -87,13 +87,13 @@ STYLE_JS = ('if(!document.getElementById("nf-subfont")){var s=document.createEle
 # Hide the scrollbar AND most Netflix player controls, keeping only the seek bar
 # (timeline*) and the play/pause button. Each control has a stable data-uia, so showing/
 # hiding any of them is just editing this list.
-# Keep the seek bar, play/pause, time, AND the audio/subtitle button (so subtitles can be
-# turned off / switched). Hide the rest.
+# Keep ONLY the seek bar (timeline) and the time; everything else (play/pause, audio/
+# subtitle, etc.) is handled by our own OSD (OK during playback), so hide it.
 _CONTROL_HIDE = (
     "[data-uia='control-nav-back'],[data-uia='control-flag'],[data-uia='control-back10'],"
     "[data-uia='control-forward10'],[data-uia^='control-volume'],[data-uia='control-next'],"
-    "[data-uia='control-episodes'],[data-uia='control-speed'],"
-    "[data-uia^='control-fullscreen'],[data-uia='video-title']"
+    "[data-uia='control-episodes'],[data-uia='control-speed'],[data-uia^='control-play-pause'],"
+    "[data-uia='control-audio-subtitle'],[data-uia^='control-fullscreen'],[data-uia='video-title']"
     "{display:none !important}")
 HIDE_JS = ('if(!document.getElementById("nf-noscroll")){var s=document.createElement("style");'
            's.id="nf-noscroll";s.textContent="::-webkit-scrollbar{display:none !important}'
