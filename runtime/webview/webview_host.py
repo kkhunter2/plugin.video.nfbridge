@@ -357,22 +357,43 @@ SCROLL_WARMUP_JS = (
     "(function(){try{"
     "document.querySelectorAll(\".sliderContent,[class*='sliderContent'],.rowContent\").forEach("
     "function(s){try{s.scrollLeft=s.scrollWidth;}catch(e){}});"
-    "document.querySelectorAll(\".handleNext,[class*='handleNext'],[data-uia*='next']\").forEach("
+    "document.querySelectorAll(\".handleNext,[class*='handleNext']\").forEach("
     "function(b){try{b.click();}catch(e){}});"
     "window.scrollTo(0,document.body.scrollHeight);"
     "}catch(e){}})()")
 
+_WARMUP_RUNNING = [False]
+
 
 def _warmup_home(window):
     """Only ~8 tiles per row load box art initially; scroll every row right + down the page
-    so Netflix lazy-loads the rest of the art, then scroll back to the top."""
-    try:
-        for _ in range(4):
-            window.evaluate_js(SCROLL_WARMUP_JS)
-            time.sleep(1.2)
-        window.evaluate_js('window.scrollTo(0,0)')
-    except Exception:
-        pass
+    so Netflix lazy-loads the rest. Runs in the BACKGROUND with short non-blocking locks so
+    it never holds up a browse read (which otherwise timed out)."""
+    if _WARMUP_RUNNING[0]:
+        return
+
+    def _run():
+        _WARMUP_RUNNING[0] = True
+        try:
+            for _ in range(8):
+                if _rpc_lock.acquire(blocking=False):
+                    try:
+                        window.evaluate_js(SCROLL_WARMUP_JS)
+                    except Exception:
+                        pass
+                    finally:
+                        _rpc_lock.release()
+                time.sleep(1.0)
+            if _rpc_lock.acquire(blocking=False):
+                try:
+                    window.evaluate_js('window.scrollTo(0,0)')
+                except Exception:
+                    pass
+                finally:
+                    _rpc_lock.release()
+        finally:
+            _WARMUP_RUNNING[0] = False
+    threading.Thread(target=_run, daemon=True).start()
 
 
 def _genre(window, gid, timeout=25):
@@ -397,7 +418,6 @@ def _genre(window, gid, timeout=25):
         except Exception:
             pass
         time.sleep(1)
-    _warmup_home(window)
     _focus_kodi()
     return result   # window stays off-screen (rendered there); no flash
 
@@ -426,7 +446,6 @@ def _go_home(window, timeout=30):
         except Exception:
             pass
         time.sleep(1)
-    _warmup_home(window)
     _focus_kodi()
     return result   # window stays off-screen (rendered there); no flash
 
@@ -935,22 +954,6 @@ def on_start(window):
     # only set when /show or /switch surface it for sign-in/profile (then it returns
     # off-screen once home is reached).
     threading.Thread(target=window_monitor, args=(window,), daemon=True).start()
-
-    def _initial_warmup():
-        # the home loads on startup without going through _go_home, so warm its art here
-        for _ in range(45):
-            if _rpc_lock.acquire(blocking=False):
-                try:
-                    ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
-                    if ctx.get('locoRoot'):
-                        _warmup_home(window)
-                        return
-                except Exception:
-                    pass
-                finally:
-                    _rpc_lock.release()
-            time.sleep(1)
-    threading.Thread(target=_initial_warmup, daemon=True).start()
 
 
 if not os.path.isdir(CACHE):
