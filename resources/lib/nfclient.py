@@ -224,6 +224,16 @@ class NetflixClient:
                  'type': meta[vid].get('type'), 'art': artmap.get(vid),
                  'isOriginal': meta[vid].get('isOriginal')} for vid in ids]
 
+    def warm_row(self, title):
+        """Ask the daemon to scroll the named row so ALL its tiles load box art (only ~8
+        load initially). Best-effort; the caller caches the result so this runs once."""
+        if not title:
+            return
+        try:
+            self._post('/warmrow', {'title': title}, timeout=20)
+        except Exception:
+            pass
+
     def row_videos(self, root, row_index, n=30):
         # step 1: resolve the row's video refs (id + type)
         rng = {'from': 0, 'to': n}

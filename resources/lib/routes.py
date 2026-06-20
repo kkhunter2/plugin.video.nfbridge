@@ -54,7 +54,8 @@ def home():
     for r in data['rows']:
         kodiutils.add_directory(
             r['title'],
-            kodiutils.url_for(action='row', root=data['root'], index=str(r['index'])))
+            kodiutils.url_for(action='row', root=data['root'], index=str(r['index']),
+                              title=r['title']))
     kodiutils.add_directory(kodiutils.localize(30005, 'Sign out'), kodiutils.url_for(action='signout'))
     kodiutils.end_directory(content='files')
 
@@ -66,9 +67,11 @@ def row():
         return kodiutils.end_directory()
     root_id = kodiutils.param('root')
     index = int(kodiutils.param('index') or '0')
+    title = kodiutils.param('title')
     try:
+        # warm the row (scroll it so all tiles load box art) only on a cache miss, then read
         vids = cache.cached('row_{0}_{1}'.format(root_id[-12:], index), 300,
-                            lambda: c.row_videos(root_id, index, n=40))
+                            lambda: (c.warm_row(title), c.row_videos(root_id, index, n=40))[1])
     except Exception as exc:  # noqa
         kodiutils.notify('Could not load row: {0}'.format(exc))
         return kodiutils.end_directory()

@@ -353,47 +353,31 @@ def _switch_profile(window, index=0):
     return {'shown': True}
 
 
-SCROLL_WARMUP_JS = (
-    "(function(){try{"
-    "document.querySelectorAll(\".sliderContent,[class*='sliderContent'],.rowContent\").forEach("
-    "function(s){try{s.scrollLeft=s.scrollWidth;}catch(e){}});"
-    "document.querySelectorAll(\".handleNext,[class*='handleNext']\").forEach("
-    "function(b){try{b.click();}catch(e){}});"
-    "window.scrollTo(0,document.body.scrollHeight);"
-    "}catch(e){}})()")
+# Scroll ONE row (matched by its title) fully right so Netflix lazy-loads box art for all
+# of its tiles (only ~8 load initially). %s is filled with the JSON-quoted row title.
+WARMROW_JS = (
+    "(function(t){"
+    "var rows=document.querySelectorAll(\".lolomoRow,[class*='lolomoRow']\");"
+    "for(var i=0;i<rows.length;i++){var r=rows[i],"
+    "h=r.querySelector(\".rowTitle,[class*='rowTitle'],h2\");"
+    "if(h&&(h.textContent||'').trim()===t){"
+    "var sl=r.querySelector(\".sliderContent,[class*='sliderContent']\");"
+    "if(sl){try{sl.scrollLeft=sl.scrollWidth;}catch(e){}}"
+    "r.querySelectorAll(\".handleNext,[class*='handleNext']\").forEach("
+    "function(b){try{b.click();}catch(e){}});return 'ok';}}return 'nf';})(%s)")
 
-_WARMUP_RUNNING = [False]
 
-
-def _warmup_home(window):
-    """Only ~8 tiles per row load box art initially; scroll every row right + down the page
-    so Netflix lazy-loads the rest. Runs in the BACKGROUND with short non-blocking locks so
-    it never holds up a browse read (which otherwise timed out)."""
-    if _WARMUP_RUNNING[0]:
+def _warm_row(window, title):
+    """Scroll just the named row a few times so the rest of its tiles load box art."""
+    if not title:
         return
-
-    def _run():
-        _WARMUP_RUNNING[0] = True
+    js = WARMROW_JS % json.dumps(title)
+    for _ in range(4):
         try:
-            for _ in range(8):
-                if _rpc_lock.acquire(blocking=False):
-                    try:
-                        window.evaluate_js(SCROLL_WARMUP_JS)
-                    except Exception:
-                        pass
-                    finally:
-                        _rpc_lock.release()
-                time.sleep(1.0)
-            if _rpc_lock.acquire(blocking=False):
-                try:
-                    window.evaluate_js('window.scrollTo(0,0)')
-                except Exception:
-                    pass
-                finally:
-                    _rpc_lock.release()
-        finally:
-            _WARMUP_RUNNING[0] = False
-    threading.Thread(target=_run, daemon=True).start()
+            window.evaluate_js(js)
+        except Exception:
+            pass
+        time.sleep(0.9)
 
 
 def _genre(window, gid, timeout=25):
@@ -752,6 +736,13 @@ def _start_rpc(window, port):
                     _set_fullscreen(window, False)
                     _render_offscreen(window)
                     _focus_kodi()
+                    send(self, 200, {'ok': True})
+                except Exception as exc:
+                    send(self, 200, {'err': str(exc)})
+            elif self.path == '/warmrow':
+                # scroll one row so all its tiles load box art (the caller caches the result)
+                try:
+                    _warm_row(window, req.get('title', ''))
                     send(self, 200, {'ok': True})
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
