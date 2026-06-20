@@ -297,7 +297,7 @@ def play(video_id):
 def _play_embedded(video_id):
     """Tell the running daemon to navigate to the watch page and show its window."""
     from resources.lib import nfclient
-    c = nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon)
+    c = nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon, code_ver=_code_ver())
     if not c.ensure():
         kodiutils.notify('Netflix not signed in - use "Sign in" first')
         return

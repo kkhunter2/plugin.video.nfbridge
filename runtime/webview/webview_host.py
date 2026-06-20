@@ -155,6 +155,8 @@ RPC_PORT = os.environ.get('NF_RPC_PORT')
 _rpc_lock = threading.RLock()
 _rpc_counter = [0]
 _ready = [False]   # last-known readiness; /health returns it without blocking
+_BACK_FLAG = [False]   # set by the low-level keyboard hook when Back is pressed in playback
+_HOOK_REFS = []
 try:
     # restart the daemon on code change OR subtitle-font change (the font is applied at
     # launch, so a running daemon must relaunch to pick up a newly chosen font).
@@ -788,9 +790,10 @@ def window_monitor(window):
                         if st.get('e') and reload_count < 3:
                             window.load_url(url)           # transient error -> re-navigate fresh
                             reload_count += 1
-                    # Back pressed, stalled too long (any stuck/error screen), or the player
-                    # was exited -> return to Kodi so the user is never trapped.
-                    if st.get('b') or stuck > 50 or (was_watching and not on_watch):
+                    # Back pressed (keyboard hook or in-page listener), stalled too long
+                    # (any stuck/error screen), or the player was exited -> return to Kodi.
+                    if _BACK_FLAG[0] or st.get('b') or stuck > 50 or (was_watching and not on_watch):
+                        _BACK_FLAG[0] = False
                         try:
                             window.evaluate_js('window.__TOKODI=0;var v=document.querySelector("video");'
                                                'if(v){try{v.pause();}catch(e){}}')
@@ -828,8 +831,56 @@ def window_monitor(window):
         time.sleep(0.5)
 
 
+def _back_hook_thread():
+    """A low-level keyboard hook so Back works during playback even when the WebView does
+    NOT hold keyboard focus (Kodi often keeps the foreground). While playing, Esc /
+    Backspace / browser-Back set a flag (the monitor then returns to Kodi) and are
+    swallowed so Kodi doesn't also act. When not playing, all keys pass through."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        WH_KEYBOARD_LL = 13
+        WM_KEYDOWN = 0x0100
+        WM_SYSKEYDOWN = 0x0104
+
+        class KBDLLHOOKSTRUCT(ctypes.Structure):
+            _fields_ = [('vkCode', wintypes.DWORD), ('scanCode', wintypes.DWORD),
+                        ('flags', wintypes.DWORD), ('time', wintypes.DWORD),
+                        ('dwExtraInfo', ctypes.c_size_t)]
+
+        LRESULT = ctypes.c_ssize_t
+        HOOKPROC = ctypes.CFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM,
+                                    ctypes.POINTER(KBDLLHOOKSTRUCT))
+
+        def _proc(nCode, wParam, lParam):
+            try:
+                if nCode == 0 and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
+                    vk = lParam[0].vkCode
+                    if _FS[0] and vk in (0x1B, 0x08, 0xA6):   # ESC, BACKSPACE, BROWSER_BACK
+                        _BACK_FLAG[0] = True
+                        return 1                              # swallow (Kodi shouldn't also act)
+            except Exception:
+                pass
+            return u.CallNextHookEx(None, nCode, wParam, lParam)
+
+        cb = HOOKPROC(_proc)
+        u.SetWindowsHookExW.restype = ctypes.c_void_p
+        u.SetWindowsHookExW.argtypes = [ctypes.c_int, HOOKPROC, ctypes.c_void_p, wintypes.DWORD]
+        u.CallNextHookEx.restype = LRESULT
+        _HOOK_REFS.append(cb)
+        _HOOK_REFS.append(u.SetWindowsHookExW(WH_KEYBOARD_LL, cb, None, 0))
+        msg = wintypes.MSG()
+        while u.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
+            u.TranslateMessage(ctypes.byref(msg))
+            u.DispatchMessageW(ctypes.byref(msg))
+    except Exception:
+        pass
+
+
 def on_start(window):
     threading.Thread(target=injector, args=(window,), daemon=True).start()
+    threading.Thread(target=_back_hook_thread, daemon=True).start()
 
     def _icon_later():
         time.sleep(1.5)            # let the native window exist before stamping the icon
