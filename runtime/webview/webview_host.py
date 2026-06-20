@@ -701,6 +701,17 @@ def _start_rpc(window, port):
                     send(self, 200, {'ok': True})
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
+            elif self.path == '/stop':
+                # leave the watch page so the WebView frees the audio device for Kodi
+                try:
+                    window.evaluate_js('window.__TOKODI=0')
+                    window.load_url('https://www.netflix.com/browse')
+                    _set_fullscreen(window, False)
+                    _render_offscreen(window)
+                    _focus_kodi()
+                    send(self, 200, {'ok': True})
+                except Exception as exc:
+                    send(self, 200, {'err': str(exc)})
             else:
                 send(self, 404, {'err': 'not found'})
 
@@ -795,8 +806,10 @@ def window_monitor(window):
                     if _BACK_FLAG[0] or st.get('b') or stuck > 50 or (was_watching and not on_watch):
                         _BACK_FLAG[0] = False
                         try:
-                            window.evaluate_js('window.__TOKODI=0;var v=document.querySelector("video");'
-                                               'if(v){try{v.pause();}catch(e){}}')
+                            # leave the watch page entirely (not just pause) so the WebView
+                            # releases the audio device for Kodi's own local playback.
+                            window.evaluate_js('window.__TOKODI=0')
+                            window.load_url('https://www.netflix.com/browse')
                         except Exception:
                             pass
                         _set_fullscreen(window, False)

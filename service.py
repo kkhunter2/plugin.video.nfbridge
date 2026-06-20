@@ -10,6 +10,7 @@ from resources.lib import nfclient
 
 def main():
     monitor = xbmc.Monitor()
+    kplayer = xbmc.Player()
     client = nfclient.NetflixClient(port=player.DAEMON_PORT)
     was_playing = False
     while not monitor.abortRequested():
@@ -17,6 +18,15 @@ def main():
             playing = bool((client._get('/health', timeout=2) or {}).get('playing'))
         except Exception:
             playing = False
+        # If Kodi started its OWN (local) playback while the Netflix window is still up,
+        # stop Netflix so it releases the audio device (else local playback misbehaves).
+        if playing:
+            try:
+                if kplayer.isPlaying():
+                    client._post('/stop', {}, timeout=5)
+                    playing = False
+            except Exception:
+                pass
         if was_playing and not playing:
             kodiutils.restore_audio()        # playback stopped -> give audio back to Kodi
         was_playing = playing
