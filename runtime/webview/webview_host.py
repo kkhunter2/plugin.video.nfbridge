@@ -353,6 +353,28 @@ def _switch_profile(window, index=0):
     return {'shown': True}
 
 
+SCROLL_WARMUP_JS = (
+    "(function(){try{"
+    "document.querySelectorAll(\".sliderContent,[class*='sliderContent'],.rowContent\").forEach("
+    "function(s){try{s.scrollLeft=s.scrollWidth;}catch(e){}});"
+    "document.querySelectorAll(\".handleNext,[class*='handleNext'],[data-uia*='next']\").forEach("
+    "function(b){try{b.click();}catch(e){}});"
+    "window.scrollTo(0,document.body.scrollHeight);"
+    "}catch(e){}})()")
+
+
+def _warmup_home(window):
+    """Only ~8 tiles per row load box art initially; scroll every row right + down the page
+    so Netflix lazy-loads the rest of the art, then scroll back to the top."""
+    try:
+        for _ in range(4):
+            window.evaluate_js(SCROLL_WARMUP_JS)
+            time.sleep(1.2)
+        window.evaluate_js('window.scrollTo(0,0)')
+    except Exception:
+        pass
+
+
 def _genre(window, gid, timeout=25):
     """Navigate to a genre/category page and return its LoCo root (rows are then read
     by falcor like the home). Renders off-screen so the page prefetches, no flash."""
@@ -375,6 +397,7 @@ def _genre(window, gid, timeout=25):
         except Exception:
             pass
         time.sleep(1)
+    _warmup_home(window)
     _focus_kodi()
     return result   # window stays off-screen (rendered there); no flash
 
@@ -403,6 +426,7 @@ def _go_home(window, timeout=30):
         except Exception:
             pass
         time.sleep(1)
+    _warmup_home(window)
     _focus_kodi()
     return result   # window stays off-screen (rendered there); no flash
 
@@ -445,7 +469,7 @@ def _set_fullscreen(window, on):
             _FS[0] = True
         elif not on and _FS[0]:
             u.SetWindowLongW(hwnd, GWL_STYLE, _PREV_STYLE[0] or 0x00CF0000)
-            u.SetWindowPos(hwnd, 0, -4000, -4000, 2560, 1440, 0x0020 | 0x0010)  # FRAMECHANGED|NOACTIVATE
+            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0020 | 0x0010)  # FRAMECHANGED|NOACTIVATE
             _FS[0] = False
     except Exception:
         pass
@@ -511,7 +535,7 @@ def _render_offscreen(window):
         hwnd = _own_hwnd()
         if hwnd:
             u.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE (un-minimize / show, no focus steal)
-            u.SetWindowPos(hwnd, 0, -4000, -4000, 2560, 1440, 0x0014)  # NOACTIVATE|NOZORDER (wide -> more art tiles render)
+            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0014)  # NOACTIVATE|NOZORDER (wide -> more art tiles render)
             return
     except Exception:
         pass
@@ -912,6 +936,22 @@ def on_start(window):
     # off-screen once home is reached).
     threading.Thread(target=window_monitor, args=(window,), daemon=True).start()
 
+    def _initial_warmup():
+        # the home loads on startup without going through _go_home, so warm its art here
+        for _ in range(45):
+            if _rpc_lock.acquire(blocking=False):
+                try:
+                    ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
+                    if ctx.get('locoRoot'):
+                        _warmup_home(window)
+                        return
+                except Exception:
+                    pass
+                finally:
+                    _rpc_lock.release()
+            time.sleep(1)
+    threading.Thread(target=_initial_warmup, daemon=True).start()
+
 
 if not os.path.isdir(CACHE):
     os.makedirs(CACHE)
@@ -969,7 +1009,7 @@ except Exception:
 # never prefetches), but a window positioned off-screen DOES render while staying
 # invisible -> data loads with no flash. /play and /show move it on-screen.
 _offscreen = bool(RPC_PORT) and os.environ.get('NF_FULLSCREEN') != '1'
-_win = webview.create_window('Netflix', URL, width=2560, height=1440,
+_win = webview.create_window('Netflix', URL, width=1600, height=900,
                              x=(-4000 if _offscreen else None),
                              y=(-4000 if _offscreen else None),
                              fullscreen=(os.environ.get('NF_FULLSCREEN') == '1'))
