@@ -155,8 +155,17 @@ RPC_PORT = os.environ.get('NF_RPC_PORT')
 _rpc_lock = threading.RLock()
 _rpc_counter = [0]
 _ready = [False]   # last-known readiness; /health returns it without blocking
-_BACK_FLAG = [False]   # set by the low-level keyboard hook when Back is pressed in playback
+_BACK_FLAG = [False]    # low-level keyboard hook sets this when Back is pressed in playback
+_SKIPNEXT_FLAG = [False]  # ... and this when OK/Enter is pressed in playback
 _HOOK_REFS = []
+
+# Click the visible Skip-Intro / Skip-Recap / seamless Next-Episode overlay button (these
+# are separate from the hidden control bar). Used when OK/Enter is pressed during playback.
+_SKIP_SELS_JS = ("[\"[data-uia='player-skip-intro']\",\"[data-uia='player-skip-recap']\","
+                 "\"[data-uia*='skip']\",\"[data-uia*='next-episode-seamless']\"]")
+CLICK_SKIP_JS = ("(function(){var S=" + _SKIP_SELS_JS + ";for(var i=0;i<S.length;i++){"
+                 "var b=document.querySelector(S[i]);if(b){var r=b.getBoundingClientRect();"
+                 "if(r.width>0&&r.height>0){b.click();return 1;}}}return 0;})()")
 try:
     # restart the daemon on code change OR subtitle-font change (the font is applied at
     # launch, so a running daemon must relaunch to pick up a newly chosen font).
@@ -825,6 +834,12 @@ def window_monitor(window):
                     url = st.get('u', '')
                     on_watch = '/watch/' in url
                     has_video = bool(st.get('v'))
+                    if _SKIPNEXT_FLAG[0]:
+                        _SKIPNEXT_FLAG[0] = False
+                        try:
+                            window.evaluate_js(CLICK_SKIP_JS)   # OK -> Skip Intro / Next if shown
+                        except Exception:
+                            pass
                     if on_watch:
                         was_watching = True
                     if has_video:
@@ -907,6 +922,9 @@ def _back_hook_thread():
                     if _FS[0] and vk in (0x1B, 0x08, 0xA6):   # ESC, BACKSPACE, BROWSER_BACK
                         _BACK_FLAG[0] = True
                         return 1                              # swallow (Kodi shouldn't also act)
+                    if _FS[0] and vk == 0x0D:                 # Enter/OK -> Skip Intro / Next if shown
+                        _SKIPNEXT_FLAG[0] = True
+                        return 1
             except Exception:
                 pass
             return u.CallNextHookEx(None, nCode, wParam, lParam)
