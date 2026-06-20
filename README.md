@@ -1,4 +1,4 @@
-# Netflix (Bridge) — `plugin.video.nfbridge`
+# Nflix — `plugin.video.nfbridge`
 
 A new Netflix Kodi addon built on the conclusion of the June‑2026 DRM investigation
 (see `../netflix-*.md`, `../ISA-1850-report.md`): **an open addon cannot decrypt

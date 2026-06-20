@@ -64,7 +64,7 @@ def home():
 def row():
     c = _client()
     if not c.ready():
-        kodiutils.notify('Netflix browse not ready')
+        kodiutils.notify('Nflix browse not ready')
         return kodiutils.end_directory()
     root_id = kodiutils.param('root')
     index = int(kodiutils.param('index') or '0')

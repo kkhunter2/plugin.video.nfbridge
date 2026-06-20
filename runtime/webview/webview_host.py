@@ -1031,7 +1031,7 @@ except Exception:
 # never prefetches), but a window positioned off-screen DOES render while staying
 # invisible -> data loads with no flash. /play and /show move it on-screen.
 _offscreen = bool(RPC_PORT) and os.environ.get('NF_FULLSCREEN') != '1'
-_win = webview.create_window('Netflix', URL, width=1600, height=900,
+_win = webview.create_window('Nflix', URL, width=1600, height=900,
                              x=(-4000 if _offscreen else None),
                              y=(-4000 if _offscreen else None),
                              fullscreen=(os.environ.get('NF_FULLSCREEN') == '1'))

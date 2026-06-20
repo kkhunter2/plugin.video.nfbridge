@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Netflix (Bridge) — Kodi plugin entry point.
+"""Nflix — Kodi plugin entry point.
 
 Parses the invocation URL and dispatches to a route handler.
 Layer 1 (navigation) builds Kodi directories; Layer 2 (player) delegates playback.

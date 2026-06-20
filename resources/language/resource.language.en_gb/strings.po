@@ -1,5 +1,5 @@
 # Kodi Media Center language file
-# Addon Name: Netflix (Bridge)
+# Addon Name: Nflix
 # Addon id: plugin.video.nfbridge
 msgid ""
 msgstr ""

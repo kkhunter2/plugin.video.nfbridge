@@ -130,7 +130,12 @@ def log(msg, level=xbmc.LOGINFO):
     xbmc.log('[{0}] {1}'.format(ADDON_ID, msg), level)
 
 
-def notify(msg, heading='Netflix (Bridge)'):
+def notify(msg, heading=None):
+    # heading defaults to the add-on's display name (addon.xml) so it always matches
+    try:
+        heading = heading or ADDON.getAddonInfo('name')
+    except Exception:
+        heading = heading or 'Nflix'
     xbmcgui.Dialog().notification(heading, msg)
 
 
@@ -185,7 +190,7 @@ def end_directory(content='videos', sort=True):
     xbmcplugin.endOfDirectory(handle())
 
 
-def prompt(heading='Search Netflix'):
+def prompt(heading='Search Nflix'):
     kb = xbmc.Keyboard('', heading)
     kb.doModal()
     return kb.getText() if kb.isConfirmed() else None
