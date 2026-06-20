@@ -182,9 +182,12 @@ def _ensure_daemon():
 
 
 def _code_ver():
-    """mtime of the deployed daemon script -> lets nfclient restart a stale daemon."""
+    """daemon-script mtime + the chosen subtitle font -> nfclient restarts a stale OR
+    font-changed daemon (the font is applied at launch)."""
     try:
-        return str(int(os.path.getmtime(os.path.join(_runtime_dir(), 'webview', 'webview_host.py'))))
+        from resources.lib import kodi_subs
+        mtime = str(int(os.path.getmtime(os.path.join(_runtime_dir(), 'webview', 'webview_host.py'))))
+        return mtime + '|' + str(kodi_subs.resolve_font_path() or '')
     except Exception:
         return None
 
@@ -225,6 +228,7 @@ def _apply_kodi_subtitle_font(cmd, env):
         from resources.lib import kodi_subs
         env['NF_STYLE'] = json.dumps(kodi_subs.style())
         font = kodi_subs.resolve_font_path()
+        env['NF_FONT_SRC'] = font or ''   # part of the daemon version -> a font change relaunches it
     except Exception as exc:  # noqa
         kodiutils.log('subtitle settings read failed: {0}'.format(exc))
         return

@@ -84,9 +84,19 @@ STYLE_JS = ('if(!document.getElementById("nf-subfont")){var s=document.createEle
 
 # Hide the scrollbar: when subtitles render the page overflows a hair and the vertical
 # scrollbar's up/down arrows show as white dots top-right/bottom-right of the screen.
+# Hide the scrollbar AND most Netflix player controls, keeping only the seek bar
+# (timeline*) and the play/pause button. Each control has a stable data-uia, so showing/
+# hiding any of them is just editing this list.
+_CONTROL_HIDE = (
+    "[data-uia='control-nav-back'],[data-uia='control-flag'],[data-uia='control-back10'],"
+    "[data-uia='control-forward10'],[data-uia^='control-volume'],[data-uia='control-next'],"
+    "[data-uia='control-episodes'],[data-uia='control-audio-subtitle'],[data-uia='control-speed'],"
+    "[data-uia^='control-fullscreen'],[data-uia='video-title'],[data-uia='controls-time-remaining']"
+    "{display:none !important}")
 HIDE_JS = ('if(!document.getElementById("nf-noscroll")){var s=document.createElement("style");'
            's.id="nf-noscroll";s.textContent="::-webkit-scrollbar{display:none !important}'
-           'html,body{overflow:hidden !important}";(document.head||document.documentElement).appendChild(s);}')
+           'html,body{overflow:hidden !important}' + _CONTROL_HIDE + '";'
+           '(document.head||document.documentElement).appendChild(s);}')
 
 # During playback the fullscreen WebView has focus; Netflix doesn't treat Back/Esc as
 # "return to Kodi", so we capture those keys and flag window.__TOKODI for the monitor.
@@ -146,7 +156,10 @@ _rpc_lock = threading.RLock()
 _rpc_counter = [0]
 _ready = [False]   # last-known readiness; /health returns it without blocking
 try:
-    _CODE_VER = str(int(os.path.getmtime(os.path.abspath(__file__))))  # restart on code change
+    # restart the daemon on code change OR subtitle-font change (the font is applied at
+    # launch, so a running daemon must relaunch to pick up a newly chosen font).
+    _CODE_VER = (str(int(os.path.getmtime(os.path.abspath(__file__))))
+                 + '|' + os.environ.get('NF_FONT_SRC', ''))
 except Exception:
     _CODE_VER = '0'
 
