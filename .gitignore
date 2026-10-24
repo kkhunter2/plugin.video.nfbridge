@@ -2,15 +2,16 @@
 __pycache__/
 *.pyc
 
-# Bundled runtime (downloaded/installed on first use, not source)
-runtime/electron/
-runtime/player/node_modules/
-runtime/webview/cache/
+# Build output of the runtime exe (rebuilt by runtime/webview/build_exe.py)
 runtime/webview/build/
 runtime/webview/dist/
 *.spec
-
-# Per-user session material — never commit
-nf_cookies.json
-runtime/player/nf_cookies.json
 *.log
+
+# Per-user material — never commit. (Since 0.3.0 the WebView2 profile and the font
+# cache live in Kodi's addon_data dir; these cover older layouts / stray runs.)
+runtime/webview/profile/
+runtime/webview/cache/
+
+# Claude Code / oh-my-claudecode session state
+.omc/

@@ -3,21 +3,29 @@
 
 Routes
 ------
-  (root)                       -> profiles (or home if a profile is active)
-  action=profiles              -> profile chooser
-  action=home&profile=<guid>   -> home (LoCo carousels)
-  action=list&id=<listid>      -> a video list / carousel
+  (root)                       -> home (LoCo carousels + Search / My List / Categories / Profiles)
+  action=home                  -> home
+  action=row&root=&index=      -> a home row's videos
+  action=categories            -> Series / Movies
+  action=genre&id=<gid>        -> a category's rows (then action=row with root=/browse/genre/<gid>)
   action=mylist                -> My List
   action=search                -> search prompt + results
-  action=show&id=<videoid>     -> seasons / episodes of a show
-  action=play&id=<videoid>     -> Layer 2: launch external player (no Kodi playback)
+  action=show&id=<videoid>     -> seasons / episodes of a show (or a lone movie item)
+  action=season&show=&i=       -> one season's episodes
+  action=profiles              -> profile list (click = switch)
+  action=switchprofile&index=  -> switch the daemon to that profile
+  action=pickprofile           -> profile picker dialog (Settings button / RunPlugin)
+  action=signin / signout
+  action=play&id=<videoid>     -> Layer 2: play in the daemon window (no Kodi playback)
 """
-try:
-    from urllib.parse import parse_qsl
-except ImportError:  # py2 safety (Kodi 18-)
-    from urlparse import parse_qsl
+from urllib.parse import parse_qsl
 
 from resources.lib import routes, kodiutils
+
+# actions that neither browse nor need the daemon recovered first
+_NO_BROWSE = ('play', 'signin', 'signout', 'switchprofile', 'pickprofile')
+# actions whose URL params don't depend on a cached page layout
+_ROOT_SAFE = ('root', 'home', 'profiles', 'categories', 'search', 'mylist', 'genre', 'show', 'season')
 
 
 def dispatch(base_url, handle, query):
@@ -25,25 +33,27 @@ def dispatch(base_url, handle, query):
     action = params.get('action', 'root')
     kodiutils.set_context(base_url, handle, params)
 
-    # Daemon recovery: the detached daemon can die while Kodi still shows cached lists, so
-    # any click would just error. If a browse action runs while the daemon is dead,
-    # relaunch it, drop the now-stale cache (the LoCo root changes on relaunch) and land
-    # the user on a fresh Home instead of the broken view.
     # Safety net: any non-play action means the user is browsing, not watching, so make
     # sure the audio device / screensaver are back to the user's settings (in case the
     # service missed the stop).
     if action != 'play':
         kodiutils.restore_audio()
 
-    if action not in ('play', 'signin', 'signout', 'switchprofile'):
+    # Daemon recovery: the detached daemon can die (or is quit by the service on Kodi
+    # shutdown) while Kodi still shows cached lists whose URLs carry the old LoCo root.
+    # If a browse action finds the daemon down, drop the stale cache, (re)launch it and
+    # land the user on a fresh Home instead of a broken row. Not while Kodi is playing
+    # local / other-addon content: the service quits the daemon whenever Kodi's player is
+    # active (to free the audio device), so launching here would thrash launch<->quit
+    # and can orphan the WebView2 profile lock ("Main window failed to start").
+    if action not in _NO_BROWSE and not kodiutils.is_playing():
         from resources.lib import player, cache
         client = player.browse_client()
         if not client.running():
             cache.clear()
-            if client.ensure():
-                kodiutils.notify('Netflix reconnected')
-                if action not in ('root', 'home', 'profiles', 'categories'):
-                    action = 'root'
+            kodiutils.notify(kodiutils.localize(30009, 'Starting Netflix...'))
+            if client.ensure() and action not in _ROOT_SAFE:
+                action = 'root'
 
     table = {
         'root': routes.root,
@@ -52,8 +62,6 @@ def dispatch(base_url, handle, query):
         'row': routes.row,
         'categories': routes.categories,
         'genre': routes.genre,
-        'rowlist': routes.rowlist,
-        'list': routes.video_list,
         'mylist': routes.my_list,
         'search': routes.search,
         'show': routes.show,
@@ -62,6 +70,7 @@ def dispatch(base_url, handle, query):
         'signin': routes.signin,
         'signout': routes.signout,
         'switchprofile': routes.switchprofile,
+        'pickprofile': routes.pickprofile,
     }
     fn = table.get(action, routes.root)
     fn()

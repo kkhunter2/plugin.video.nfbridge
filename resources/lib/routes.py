@@ -9,24 +9,53 @@ def _client():
     return player.browse_client()
 
 
+def _not_ready(c):
+    """Explain why the daemon isn't usable and end the (empty) directory."""
+    h = c.health()
+    if kodiutils.is_playing():
+        # the service quits the daemon while Kodi plays, so it can't be (re)started now
+        kodiutils.notify(kodiutils.localize(30010, 'Stop the current playback to browse Netflix'))
+    elif h.get('login') or (h and not h.get('ready')):
+        # parked on the sign-in form (or signed out): offer sign-in as an ACTION item (not
+        # a folder), so clicking runs the signin route without opening an empty directory
+        kodiutils.add_directory('[B]{0}[/B]'.format(kodiutils.localize(30006, 'Sign in to Netflix')),
+                                kodiutils.url_for(action='signin'), is_folder=False)
+        kodiutils.notify(kodiutils.localize(30006, 'Sign in to Netflix'))
+    elif c.running():
+        # up and signed in but it didn't answer in time (page mid-navigation): just retry
+        kodiutils.notify(kodiutils.localize(30012, 'Netflix is busy - try again'))
+    else:
+        kodiutils.notify('Nflix browse not ready')
+    return kodiutils.end_directory(content='files')
+
+
 def _add_item(v):
     """Render a video: a show -> folder (episode list); a movie -> playable."""
     if not v.get('id'):
         return
     art = {'thumb': v.get('art'), 'poster': v.get('art')}
     if v.get('type') == 'movie':
-        info = _watch_info({'title': v['title'], 'mediatype': 'movie'},
+        info = _watch_info({'title': v['title'], 'mediatype': 'movie',
+                            'plot': v.get('synopsis')},
                            v.get('bookmark'), v.get('runtime'))
         kodiutils.add_directory(
             v['title'] or v['id'], kodiutils.url_for(action='play', id=v['id']),
             art=art, info=info, is_folder=False, playable=True)
     else:
-        # 'show' OR unknown type (e.g. Top 10 ranked items carry no type) -> open as a
-        # folder; show() plays it only if it really has no episodes (and isn't a show).
+        # 'show' OR unknown type -> open as a folder; show() resolves an unknown type
+        # with one falcor call and renders a lone playable item for a movie.
         kodiutils.add_directory(
             v['title'] or v['id'],
             kodiutils.url_for(action='show', id=v['id'], type=v.get('type') or ''),
-            art=art, info={'title': v['title'], 'mediatype': 'tvshow'}, is_folder=True)
+            art=art, info={'title': v['title'], 'mediatype': 'tvshow',
+                           'plot': v.get('synopsis')}, is_folder=True)
+
+
+# a row/list is cacheable only when it has content AND art (a 'cold' snapshot right
+# after a daemon restart has no art; an empty result is a transient failure) — so the
+# next visit retries instead of serving it for the full TTL.
+def _warm(vs):
+    return bool(vs) and any(v.get('art') for v in vs)
 
 
 # ---------------------------------------------------------------- routes ------
@@ -37,10 +66,7 @@ def root():
 def home():
     c = _client()
     if not c.ensure():
-        kodiutils.add_directory('[B]{0}[/B]'.format(kodiutils.localize(30006, 'Sign in to Netflix')),
-                                kodiutils.url_for(action='signin'))
-        kodiutils.notify(kodiutils.localize(30006, 'Sign in to Netflix'))
-        return kodiutils.end_directory(content='files')
+        return _not_ready(c)
     try:
         data = cache.cached('home', 180, lambda: c.home(n_rows=40))
     except Exception as exc:  # noqa
@@ -57,22 +83,22 @@ def home():
             r['title'],
             kodiutils.url_for(action='row', root=data['root'], index=str(r['index']),
                               title=r['title']))
-    kodiutils.add_directory(kodiutils.localize(30005, 'Sign out'), kodiutils.url_for(action='signout'))
+    kodiutils.add_directory(kodiutils.localize(30005, 'Sign out'), kodiutils.url_for(action='signout'),
+                            is_folder=False)
     kodiutils.end_directory(content='files')
 
 
 def row():
     c = _client()
-    if not c.ready():
-        kodiutils.notify('Nflix browse not ready')
-        return kodiutils.end_directory()
-    root_id = kodiutils.param('root')
+    if not c.ensure():
+        return _not_ready(c)
+    root_id = kodiutils.param('root') or '/browse'
     index = int(kodiutils.param('index') or '0')
-    title = kodiutils.param('title')
+    title = kodiutils.param('title') or ''
     try:
-        # warm the row (scroll it so all tiles load box art) only on a cache miss, then read
-        vids = cache.cached('row_{0}_{1}'.format(root_id[-12:], index), 300,
-                            lambda: (c.warm_row(title), c.row_videos(root_id, index, n=40))[1])
+        vids = cache.cached_when(
+            'row_{0}_{1}'.format(root_id[-20:], index), 300,
+            lambda: c.row_videos(root_id, index, n=40, title=title), keep=_warm)
     except Exception as exc:  # noqa
         kodiutils.notify('Could not load row: {0}'.format(exc))
         return kodiutils.end_directory()
@@ -83,13 +109,14 @@ def row():
 
 def profiles():
     c = _client()
-    if not c.ready():
-        return kodiutils.end_directory()
+    if not c.ensure():
+        return _not_ready(c)
     try:
         for i, p in enumerate(c.profiles()):
             kodiutils.add_directory(
-                p['name'], kodiutils.url_for(action='switchprofile', index=str(i)),
-                art={'icon': p.get('avatar')})
+                p['name'], kodiutils.url_for(action='switchprofile', index=str(i),
+                                             guid=p.get('guid') or ''),
+                art={'icon': p.get('avatar')}, is_folder=False)
     except Exception as exc:  # noqa
         kodiutils.notify(str(exc))
     kodiutils.end_directory(content='files')
@@ -97,8 +124,29 @@ def profiles():
 
 def switchprofile():
     cache.clear()
-    player.switch_profile(kodiutils.param('index') or '0')
-    kodiutils.end_directory()
+    player.switch_profile(kodiutils.param('index') or '0', kodiutils.param('guid') or '')
+
+
+def pickprofile():
+    """Standalone profile picker (used by the Settings button, via RunPlugin). Pops a
+    select dialog of Netflix profiles, then switches to the chosen one — no directory,
+    so it works from outside a plugin listing."""
+    import xbmcgui
+    c = _client()
+    if not c.ensure():
+        return kodiutils.notify('Netflix not ready')
+    try:
+        profs = c.profiles()
+    except Exception as exc:  # noqa
+        return kodiutils.notify(str(exc))
+    if not profs:
+        return kodiutils.notify('No profiles found')
+    names = [p.get('name', '?') for p in profs]
+    sel = xbmcgui.Dialog().select(kodiutils.localize(30004, 'Profiles'), names)
+    if sel < 0:
+        return
+    cache.clear()
+    player.switch_profile(str(sel), profs[sel].get('guid') or '')
 
 
 CATEGORIES = [('83', 30007, 'Series'), ('34399', 30008, 'Movies')]
@@ -113,7 +161,7 @@ def categories():
 def genre():
     c = _client()
     if not c.ensure():
-        return kodiutils.end_directory()
+        return _not_ready(c)
     gid = kodiutils.param('id')
     try:
         data = cache.cached('genre_{0}'.format(gid), 300, lambda: c.genre(gid))
@@ -121,52 +169,40 @@ def genre():
         kodiutils.notify('Could not load category: {0}'.format(exc))
         return kodiutils.end_directory()
     for r in data['rows']:
-        if r.get('id'):
-            kodiutils.add_directory(r['title'], kodiutils.url_for(action='rowlist', list=r['id']))
+        kodiutils.add_directory(
+            r['title'],
+            kodiutils.url_for(action='row', root=data['root'], index=str(r['index']),
+                              title=r['title']))
     kodiutils.end_directory(content='files')
 
 
-def rowlist():
-    c = _client()
-    if not c.ready():
-        return kodiutils.end_directory()
-    lid = kodiutils.param('list')
-    try:
-        vids = cache.cached('list_{0}'.format(lid[-16:]), 300, lambda: c.row_by_list(lid, n=40))
-    except Exception as exc:  # noqa
-        kodiutils.notify('Could not load list: {0}'.format(exc))
-        return kodiutils.end_directory()
-    for v in vids:
-        _add_item(v)
-    kodiutils.end_directory(content='movies')
-
-
+# signin / signout are ACTION items (is_folder=False): Kodi runs the plugin without a
+# directory handle, so there is no directory to end.
 def signin():
     player.launch_signin()
-    kodiutils.end_directory()
 
 
 def signout():
     cache.clear()
     kodiutils.notify('To sign out, use the account menu inside the Netflix window')
-    kodiutils.end_directory()
 
 
 def play():
     player.play(kodiutils.param('id'))
-
-
-# --- kept so existing router entries resolve (folded into the daemon browse) ---
-def video_list():
-    home()
+    # Watching changes the browse state: 'Continue Watching' gains this title and Netflix
+    # re-orders the home rows on the next load. Drop the cached home + rows so the next
+    # browse rebuilds from the daemon's refreshed page (otherwise the stale, old-root menu
+    # is served for up to its TTL: wrong row order, missing just-watched title).
+    cache.drop('home', 'mylist')
+    cache.drop_prefix('row_')
 
 
 def my_list():
     c = _client()
     if not c.ensure():
-        return kodiutils.end_directory()
+        return _not_ready(c)
     try:
-        items = cache.cached('mylist', 120, c.my_list)
+        items = cache.cached_when('mylist', 120, c.my_list, keep=_warm)
     except Exception as exc:  # noqa
         kodiutils.notify('Could not load My List: {0}'.format(exc))
         return kodiutils.end_directory()
@@ -176,14 +212,16 @@ def my_list():
 
 
 def search():
-    c = _client()
-    if not c.ensure():
-        return kodiutils.end_directory()
+    # Search runs in the daemon (Netflix's own Pinot search page, read from the Apollo
+    # cache); the daemon returns to /browse on the next home() call.
     q = kodiutils.prompt()
     if not q:
         return kodiutils.end_directory()
+    c = _client()
+    if not c.ensure():
+        return _not_ready(c)
     try:
-        results = c.search(q)
+        results = cache.cached_ok('search_{0}'.format(q[:40]), 300, lambda: c.search(q))
     except Exception as exc:  # noqa
         kodiutils.notify('Search failed: {0}'.format(exc))
         return kodiutils.end_directory()
@@ -221,9 +259,26 @@ def _render_episodes(eps):
 def show():
     c = _client()
     if not c.ensure():
-        return kodiutils.end_directory()
+        return _not_ready(c)
     sid = kodiutils.param('id')
     typ = kodiutils.param('type')
+    info = {}
+
+    if typ != 'show':
+        # Unknown type (e.g. Top 10 tiles): ONE falcor call tells movie from show, so a
+        # movie doesn't first sit through the (navigating, ~15 s) episode lookup. A movie
+        # is rendered as a single playable item — this is a folder handle, so playing
+        # from here directly isn't possible.
+        try:
+            info = cache.cached_ok('info_{0}'.format(sid), 600, lambda: c.video_info(sid))
+        except Exception as exc:  # noqa
+            kodiutils.log('video_info failed for {0}: {1}'.format(sid, exc))
+            info = {}
+        if info.get('type') == 'movie':
+            _add_item(info)
+            return kodiutils.end_directory(content='movies')
+        if info.get('type') == 'show':
+            typ = 'show'
 
     def _eps():
         s = c.episodes(sid)
@@ -240,10 +295,13 @@ def show():
         return kodiutils.end_directory()
     if not seasons:
         if typ == 'show':
-            # a real series whose episodes failed to load -> DON'T play; let the user retry
+            # a real series whose episodes failed to load -> let the user retry
             kodiutils.notify('Could not load episodes - try again')
             return kodiutils.end_directory()
-        return player.play(sid)             # movie / unknown with no episode list -> play
+        # no type and no episodes: offer it as a playable item rather than guessing
+        _add_item({'id': sid, 'title': (info or {}).get('title') or sid, 'type': 'movie',
+                   'art': (info or {}).get('art'), 'synopsis': (info or {}).get('synopsis')})
+        return kodiutils.end_directory(content='movies')
     if len(seasons) == 1:
         return _render_episodes(seasons[0].get('eps', []))
     for i, s in enumerate(seasons):

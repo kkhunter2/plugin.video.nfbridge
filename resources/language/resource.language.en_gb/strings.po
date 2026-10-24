@@ -40,3 +40,178 @@ msgstr ""
 msgctxt "#30008"
 msgid "Movies"
 msgstr ""
+
+msgctxt "#30009"
+msgid "Starting Netflix..."
+msgstr ""
+
+msgctxt "#30010"
+msgid "Stop the current playback to browse Netflix"
+msgstr ""
+
+msgctxt "#30011"
+msgid "Profile switched"
+msgstr ""
+
+msgctxt "#30012"
+msgid "Netflix is busy - try again"
+msgstr ""
+
+# ---- Player OSD ----
+msgctxt "#30020"
+msgid "Play"
+msgstr ""
+
+msgctxt "#30021"
+msgid "Pause"
+msgstr ""
+
+msgctxt "#30022"
+msgid "Subtitles"
+msgstr ""
+
+msgctxt "#30023"
+msgid "Next episode"
+msgstr ""
+
+msgctxt "#30024"
+msgid "Back"
+msgstr ""
+
+# ---- Settings: categories ----
+msgctxt "#30100"
+msgid "General"
+msgstr ""
+
+msgctxt "#30101"
+msgid "Choose how titles play and which Netflix profile to use."
+msgstr ""
+
+msgctxt "#30102"
+msgid "Embedded player (Windows)"
+msgstr ""
+
+msgctxt "#30103"
+msgid "Settings for the built-in WebView2 player window. Used when 'Playback location' is 'Embedded'."
+msgstr ""
+
+msgctxt "#30104"
+msgid "Delegate mode"
+msgstr ""
+
+msgctxt "#30105"
+msgid "Settings for handing playback to an external browser or app. Used when 'Playback location' is 'Delegate'."
+msgstr ""
+
+# ---- Settings: groups ----
+msgctxt "#30110"
+msgid "Playback"
+msgstr ""
+
+msgctxt "#30111"
+msgid "Netflix profile"
+msgstr ""
+
+msgctxt "#30112"
+msgid "WebView2 host"
+msgstr ""
+
+msgctxt "#30113"
+msgid "Windows"
+msgstr ""
+
+msgctxt "#30114"
+msgid "Other platforms"
+msgstr ""
+
+# ---- Settings: playback ----
+msgctxt "#30120"
+msgid "Playback location"
+msgstr ""
+
+msgctxt "#30121"
+msgid "Where titles play. Embedded: in the add-on's own window (Windows, up to 4K, Kodi subtitle font). Delegate: hand off to the OS Netflix client (Windows = Edge/app, macOS = Safari, Linux = Chrome)."
+msgstr ""
+
+msgctxt "#30122"
+msgid "Embedded - built-in window (Windows, up to 4K)"
+msgstr ""
+
+msgctxt "#30123"
+msgid "Delegate - play in browser/app"
+msgstr ""
+
+# ---- Settings: profile ----
+msgctxt "#30124"
+msgid "Switch profile..."
+msgstr ""
+
+msgctxt "#30125"
+msgid "Choose a Netflix profile. After you pick one, the player window shows the 'Who's watching?' screen to complete the switch."
+msgstr ""
+
+msgctxt "#30126"
+msgid "Profile to auto-select on start"
+msgstr ""
+
+msgctxt "#30127"
+msgid "Which profile the browser daemon enters on start (0 = first). Normally just use 'Switch profile...' above."
+msgstr ""
+
+msgctxt "#30128"
+msgid "Profile number (0 = first)"
+msgstr ""
+
+# ---- Settings: embedded player ----
+msgctxt "#30130"
+msgid "Python for the WebView2 host (optional)"
+msgstr ""
+
+msgctxt "#30131"
+msgid "Path to a python.exe that has pywebview and fonttools installed; used to run the built-in Netflix window. Leave empty if you use the bundled exe."
+msgstr ""
+
+msgctxt "#30132"
+msgid "Select python.exe"
+msgstr ""
+
+# ---- Settings: delegate mode ----
+msgctxt "#30140"
+msgid "Prefer the Netflix Store app (4K)"
+msgstr ""
+
+msgctxt "#30141"
+msgid "If installed, play with the Microsoft Store Netflix app (supports 4K). When off, use the Edge browser."
+msgstr ""
+
+msgctxt "#30142"
+msgid "Edge executable (override)"
+msgstr ""
+
+msgctxt "#30143"
+msgid "Set the path to msedge.exe manually, only if auto-detection fails."
+msgstr ""
+
+msgctxt "#30144"
+msgid "Select msedge.exe"
+msgstr ""
+
+msgctxt "#30145"
+msgid "Chrome/Chromium executable (override)"
+msgstr ""
+
+msgctxt "#30146"
+msgid "Set the path to the chrome executable manually (e.g. on Linux) if auto-detection fails."
+msgstr ""
+
+msgctxt "#30147"
+msgid "Select chrome"
+msgstr ""
+
+msgctxt "#30148"
+msgid "macOS browser app name"
+msgstr ""
+
+msgctxt "#30149"
+msgid "Name of the browser app used to open Netflix on macOS (e.g. Safari, Google Chrome)."
+msgstr ""

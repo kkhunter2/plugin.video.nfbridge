@@ -4,7 +4,7 @@
 Builds the WebView2 runtime exe (so embedded mode works out of the box) and zips the
 add-on under a top-level `plugin.video.nfbridge/` folder, excluding dev/build cruft.
 
-    python tools/package.py            # build exe if missing, then zip
+    python tools/package.py            # (re)build exe if missing OR older than its sources, then zip
     python tools/package.py --no-build # zip whatever is present
 """
 import os
@@ -16,8 +16,11 @@ import subprocess
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ADDON_ID = 'plugin.video.nfbridge'
 EXCLUDE_DIRS = {'.git', '__pycache__', 'build', 'cache', 'httpcache', 'profile',
-                'node_modules', 'electron', 'tools'}
-EXCLUDE_EXT = {'.pyc', '.spec', '.pyo'}
+                'node_modules', 'tools'}
+EXCLUDE_EXT = {'.pyc', '.spec', '.pyo', '.log'}
+EXCLUDE_FILES = {'.gitignore'}
+# the exe bundles these; if any is newer than the exe, the exe is stale -> rebuild
+EXE_SOURCES = ('webview_host.py', 'fontfix.py', 'build_exe.py', 'icon.ico')
 
 
 def _version():
@@ -26,12 +29,25 @@ def _version():
     return m.group(1) if m else '0.0.0'
 
 
+def _exe_stale(exe):
+    if not os.path.exists(exe):
+        return True
+    wv = os.path.join(ROOT, 'runtime', 'webview')
+    exe_mtime = os.path.getmtime(exe)
+    for name in EXE_SOURCES:
+        p = os.path.join(wv, name)
+        if os.path.exists(p) and os.path.getmtime(p) > exe_mtime:
+            print('runtime exe is older than %s -> rebuild' % name)
+            return True
+    return False
+
+
 def main(argv):
     exe = os.path.join(ROOT, 'runtime', 'webview', 'dist', 'nfbridge_player.exe')
-    if '--no-build' not in argv and not os.path.exists(exe):
+    if '--no-build' not in argv and _exe_stale(exe):
         print('building runtime exe...')
         subprocess.run([sys.executable, os.path.join(ROOT, 'runtime', 'webview', 'build_exe.py')],
-                       check=False)
+                       check=True)
 
     out = os.path.join(os.path.dirname(ROOT), '%s-%s.zip' % (ADDON_ID, _version()))
     n = 0
@@ -39,7 +55,7 @@ def main(argv):
         for dirpath, dirnames, filenames in os.walk(ROOT):
             dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
             for f in filenames:
-                if os.path.splitext(f)[1].lower() in EXCLUDE_EXT:
+                if os.path.splitext(f)[1].lower() in EXCLUDE_EXT or f in EXCLUDE_FILES:
                     continue
                 full = os.path.join(dirpath, f)
                 rel = os.path.relpath(full, ROOT)

@@ -20,9 +20,14 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def main():
+    ico = os.path.join(HERE, 'icon.ico')
     cmd = [sys.executable, '-m', 'PyInstaller', '--onefile', '--noconsole',
            '--name', 'nfbridge_player', '--paths', HERE,
            '--hidden-import', 'fontfix', '--noconfirm',
+           # the exe's own icon (Explorer / taskbar) + a copy inside the bundle so the
+           # running window can stamp it on itself (webview_host._set_window_icon)
+           '--icon', ico,
+           '--add-data', ico + os.pathsep + '.',
            '--distpath', os.path.join(HERE, 'dist'),
            '--workpath', os.path.join(HERE, 'build'),
            '--specpath', os.path.join(HERE, 'build'),

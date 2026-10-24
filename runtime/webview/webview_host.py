@@ -4,13 +4,21 @@ Netflix-trusted -> plays incl. PlayReady SL3000 / 4K) hosting netflix.com, with 
 Kodi subtitle font + style injected.
 
 Reads from the environment:
-  NF_URL    the netflix.com watch URL
-  NF_FONT   path to the Kodi subtitle TTF/OTF (optional)
-  NF_STYLE  JSON: {"color":"#RRGGBB","outlineColor":"#RRGGBB","outlinePx":2} (optional)
+  NF_URL            the netflix.com URL to open (browse)
+  NF_RPC_PORT       localhost port for the browse/play RPC server (daemon mode)
+  NF_PROFILE        WebView2 user-data dir (login cookies, DRM provisioning)
+  NF_PROFILE_INDEX  profile to auto-select at the "Who's watching?" gate (0 = first)
+  NF_FONT_WOFF2     pre-repaired (OTS-valid) Kodi subtitle font, see fontfix.py (optional)
+  NF_FONT_NAME      the Kodi subtitle font NAME; part of the daemon version key (optional)
+  NF_STYLE          JSON of Kodi's full subtitle appearance (see kodi_subs.style()): colour +
+                    opacity, bold/italic, line height, outline (outlineColor/outlineEm),
+                    background box (bgType/bgColor/bgOpacity), drop shadow (shadow*), blur.
+                    Optional; any subset is honoured.
+  NF_OSD_LABELS     JSON of localized OSD labels {play,pause,subtitles,next,back} (optional)
 
-Font is OTS-fixed (fontfix) and loaded via the FontFace binary API (bypasses Netflix
-CSP font-src); Netflix's own subtitle text/timing/position/DRM are untouched — we only
-override the font (and optionally color/outline) with an !important CSS rule.
+The font is loaded via the FontFace binary API (bypasses Netflix CSP font-src); Netflix's
+own subtitle text/timing/position/DRM are untouched — we only override the font (and
+optionally colour/outline) with an !important CSS rule.
 """
 import os
 import sys
@@ -27,35 +35,52 @@ import fontfix  # noqa: E402
 if len(sys.argv) >= 2 and sys.argv[1] == 'fontfix':
     sys.exit(fontfix.main(['fontfix'] + sys.argv[2:]))
 
+# DPI awareness must be set BEFORE any window exists (a later call is ignored), so the
+# borderless-fullscreen math (_set_fullscreen) sees real pixels on scaled displays.
+try:
+    import ctypes
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # per-monitor
+except Exception:
+    pass
+
 import webview  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'cache')
 
 URL = os.environ.get('NF_URL', 'https://www.netflix.com/')
-FONT = os.environ.get('NF_FONT', '')
 try:
     STYLE = json.loads(os.environ.get('NF_STYLE', '{}'))
 except Exception:
     STYLE = {}
+_OSD_DEFAULT = {'play': 'Play', 'pause': 'Pause', 'subtitles': 'Subtitles',
+                'next': 'Next episode', 'back': 'Back'}
+try:
+    OSD_LABELS = dict(_OSD_DEFAULT, **json.loads(os.environ.get('NF_OSD_LABELS', '{}')))
+except Exception:
+    OSD_LABELS = dict(_OSD_DEFAULT)
 
 _SEL = ('.player-timedtext,.player-timedtext-text-container,'
         '.player-timedtext-text-container span,.player-timedtext span')
+# size + vertical position belong on the container (Netflix sets those inline there)
+_CONT_SEL = '.player-timedtext-text-container,.player-timedtext'
+
+
+def _rgba(hex_color, alpha):
+    """('#RRGGBB', 0..1) -> 'rgba(r,g,b,a)'; passes the colour through on any parse error."""
+    try:
+        h = hex_color.lstrip('#')
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        return 'rgba(%d,%d,%d,%.3g)' % (r, g, b, max(0.0, min(1.0, float(alpha))))
+    except Exception:
+        return hex_color
 
 # ---- build the font loader (FontFace binary, CSP-safe) ----
-# Prefer a pre-fixed WOFF2 (the addon validates/repairs the font before launch and
-# passes NF_FONT_WOFF2); otherwise OTS-fix a raw NF_FONT here.
+# The addon validates/repairs the font before launch (fontfix) and passes the WOFF2.
 FONT_WOFF2 = os.environ.get('NF_FONT_WOFF2', '')
 LOAD_JS = ''
 _family = 'inherit'
-_woff2 = None
-if FONT_WOFF2 and os.path.exists(FONT_WOFF2):
-    _woff2 = FONT_WOFF2
-elif FONT and os.path.exists(FONT):
-    try:
-        _woff2 = fontfix.to_web_woff2(FONT, CACHE)
-    except Exception as exc:
-        sys.stderr.write('fontfix failed: %s\n' % exc)
+_woff2 = FONT_WOFF2 if FONT_WOFF2 and os.path.exists(FONT_WOFF2) else None
 if _woff2:
     b64 = fontfix.woff2_base64(_woff2)
     _family = 'KodiSubFont'
@@ -65,22 +90,78 @@ if _woff2:
                'new FontFace("KodiSubFont",a.buffer).load().then(function(f){document.fonts.add(f);});'
                '}catch(e){console.log("KSF "+e);}}')
 
-# ---- build the CSS override ----
-_rules = []
-if _family != 'inherit':
-    _rules.append('font-family:"%s",sans-serif !important' % _family)
-if STYLE.get('color'):
-    _rules.append('color:%s !important' % STYLE['color'])
-if STYLE.get('outlineColor'):
-    o = int(STYLE.get('outlinePx', 2))
-    oc = STYLE['outlineColor']
-    shadow = ','.join('%dpx %dpx 0 %s' % (dx, dy, oc)
-                      for dx in (-o, 0, o) for dy in (-o, 0, o) if dx or dy)
-    _rules.append('text-shadow:%s !important' % shadow)
-_CSS = '%s{%s}' % (_SEL, ';'.join(_rules)) if _rules else ''
-STYLE_JS = ('if(!document.getElementById("nf-subfont")){var s=document.createElement("style");'
-            's.id="nf-subfont";s.textContent=' + json.dumps(_CSS) + ';'
-            '(document.head||document.documentElement).appendChild(s);}') if _CSS else ''
+# ---- restyle Netflix's OWN subtitle nodes with Kodi's font attributes ----
+# DRM-safe: pure CSS on Netflix's `.player-timedtext` elements — we add NO overlay element
+# over the hardware-protected <video> and never touch the video or its parents (doing so
+# breaks the protected compositing path -> Netflix decode error D7361). The trade-off: we
+# do NOT override subtitle SIZE or POSITION (Netflix scales each cue to fit the width, and
+# forcing a size just fights that scaler), so font size/placement stay Netflix-native; every
+# other Kodi attribute (font, colour, opacity, weight, slant, line spacing, outline, box,
+# shadow, blur) IS applied. (An overlay can pin the exact Kodi size but risks the DRM error.)
+def _build_sub_css():
+    text = []   # applied to Netflix's subtitle text nodes
+    if _family != 'inherit':
+        text.append('font-family:"%s",sans-serif !important' % _family)
+    if STYLE.get('color'):
+        text.append('color:%s !important' % STYLE['color'])
+    if STYLE.get('bold'):
+        text.append('font-weight:700 !important')
+    if STYLE.get('italic'):
+        text.append('font-style:italic !important')
+    if STYLE.get('lineHeight'):
+        text.append('line-height:%s !important' % STYLE['lineHeight'])
+
+    # outline (+ drop shadow when Kodi's background type is "shadow") via text-shadow; em
+    # units track Netflix's chosen font size so the edge stays proportional.
+    shadows = []
+    oe = float(STYLE.get('outlineEm', 0) or 0)
+    if oe > 0 and STYLE.get('outlineColor'):
+        oc = STYLE['outlineColor']
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx or dy:
+                    shadows.append('%.4gem %.4gem 0 %s' % (dx * oe, dy * oe, oc))
+    if STYLE.get('bgType') == 'shadow':
+        se = float(STYLE.get('shadowEm', 0) or 0)
+        if se > 0:
+            sc = _rgba(STYLE.get('shadowColor', '#000000'), STYLE.get('shadowOpacity', 1.0))
+            shadows.append('%.4gem %.4gem %.4gem %s' % (se, se, se * 0.5, sc))
+    if shadows:
+        text.append('text-shadow:%s !important' % ','.join(shadows))
+
+    be = float(STYLE.get('blurEm', 0) or 0)
+    if be > 0:
+        text.append('filter:blur(%.4gem) !important' % be)
+
+    if STYLE.get('bgType') in ('box', 'square'):
+        text.append('background-color:%s !important'
+                    % _rgba(STYLE.get('bgColor', '#000000'), STYLE.get('bgOpacity', 0.8)))
+        text.append('-webkit-box-decoration-break:clone !important')
+        text.append('box-decoration-break:clone !important')
+        text.append('padding:%s !important'
+                    % ('0.1em 1em' if STYLE.get('bgType') == 'square' else '0.1em 0.35em'))
+
+    # text opacity -> fade the whole subtitle (text + outline + box) together
+    cont = []
+    op = float(STYLE.get('opacity', 1.0) or 1.0)
+    if op < 1.0:
+        cont.append('opacity:%.3g !important' % max(0.0, op))
+
+    out = ''
+    if text:
+        out += '%s{%s}' % (_SEL, ';'.join(text))
+    if cont:
+        out += '%s{%s}' % (_CONT_SEL, ';'.join(cont))
+    return out
+
+_CSS = _build_sub_css()
+# inject (or refresh) the stylesheet on Netflix's own subtitle nodes — no overlay element
+STYLE_JS = ('var s=document.getElementById("nf-subfont");'
+            'if(!s){s=document.createElement("style");s.id="nf-subfont";'
+            '(document.head||document.documentElement).appendChild(s);}'
+            'var c=' + json.dumps(_CSS) + ';if(s.textContent!==c)s.textContent=c;'
+            'var ov=document.getElementById("nfsubs-overlay");if(ov)ov.remove();'
+            'var oh=document.getElementById("nfov-hide");if(oh)oh.remove();') if _CSS else ''
 
 # Hide the scrollbar: when subtitles render the page overflows a hair and the vertical
 # scrollbar's up/down arrows show as white dots top-right/bottom-right of the screen.
@@ -107,44 +188,6 @@ BACK_KEY_JS = ('if(!window.__BKL){window.__BKL=1;document.addEventListener("keyd
                '||e.keyCode===8||e.keyCode===166){window.__TOKODI=1;}},true);}')
 
 
-SESSION_OUT = os.environ.get('NF_SESSION_OUT')
-# Netflix exposes the shakti session in the page's react context once signed in.
-EXTRACT_JS = ('(function(){try{var m=window.netflix&&netflix.reactContext&&netflix.reactContext.models;'
-              'if(!m)return null;var ui=(m.userInfo&&m.userInfo.data)||{};'
-              'var sd=(m.serverDefs&&m.serverDefs.data)||{};'
-              'if(!ui.authURL||!sd.BUILD_IDENTIFIER)return null;'
-              'return JSON.stringify({authURL:ui.authURL,build:sd.BUILD_IDENTIFIER,'
-              'guid:ui.guid,country:ui.countryOfSignup,membership:ui.membershipStatus,'
-              'gpsModel:sd.gpsModel});}catch(e){return null;}})()')
-
-
-def _capture_session(window):
-    try:
-        raw = window.evaluate_js(EXTRACT_JS)
-        if not raw or raw == 'null':
-            return False
-        data = json.loads(raw)
-        # live-session cookies via pywebview (not a credential-store read)
-        cookies = []
-        try:
-            for c in (window.get_cookies() or []):
-                try:
-                    for name, morsel in c.items():
-                        cookies.append({'name': name, 'value': morsel.value,
-                                        'domain': morsel.get('domain', '.netflix.com'),
-                                        'path': morsel.get('path', '/')})
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        data['cookies'] = cookies
-        with open(SESSION_OUT, 'w', encoding='utf-8') as fh:
-            json.dump(data, fh, ensure_ascii=False)
-        return True
-    except Exception:
-        return False
-
-
 # --------------------------------------------------------------- RPC daemon ---
 # When NF_RPC_PORT is set, run a localhost HTTP server that proxies falcor queries
 # THROUGH the page's own data client (netflix.appContext.state.pathEvaluator.get) —
@@ -157,6 +200,7 @@ RPC_PORT = os.environ.get('NF_RPC_PORT')
 _rpc_lock = threading.RLock()
 _rpc_counter = [0]
 _ready = [False]   # last-known readiness; /health returns it without blocking
+_login = [False]   # last-known "page is the sign-in form" (so callers needn't wait)
 _BACK_FLAG = [False]    # low-level keyboard hook sets this when Back is pressed in playback
 _HOOK_REFS = []
 
@@ -193,9 +237,19 @@ def _osd_log(msg):
 # subtitle tracks incl. off, next episode), so nothing depends on Netflix's own UI.
 # ok()/move()/exit() return "1:.."/"0:.." = OSD active or not.
 NAV_JS = r'''if(!window.__NFNAV){window.__NFNAV=(function(){
+var L=__OSD_LABELS__;
 function P(){try{var vp=netflix.appContext.state.playerApp.getAPI().videoPlayer;
 var ids=vp.getAllPlayerSessionIds();var sid=ids.filter(function(s){return /watch/.test(s);})[0]||ids[0];
 return vp.getVideoPlayerBySessionId(sid);}catch(e){return null;}}
+function nextId(){try{var api=netflix.appContext.state.playerApp.getAPI();
+var vp=api.videoPlayer;var ids=vp.getAllPlayerSessionIds();
+var sid=ids.filter(function(s){return /watch/.test(s);})[0]||ids[0];
+var cur=api.getVideoIdBySessionId?api.getVideoIdBySessionId(sid):null;
+if(!cur){var m=location.href.match(/watch\/(\d+)/);cur=m?+m[1]:null;}
+var md=api.getVideoMetadataByVideoId(cur);
+var cv=md&&md.getCurrentVideo&&md.getCurrentVideo();
+var ne=cv&&cv.getNextEpisode&&cv.getNextEpisode();
+return (ne&&ne.getId&&ne.getId())||0;}catch(e){return 0;}}
 var active=false,level=0,idx=0,cache=[],EL=null;
 function el(){if(EL&&document.body.contains(EL))return EL;
 EL=document.createElement("div");EL.id="__nfosd";
@@ -203,10 +257,10 @@ EL.style.cssText="position:fixed;left:50%;bottom:9%;transform:translateX(-50%);z
 (document.fullscreenElement||document.body).appendChild(EL);return EL;}
 function build(){var p=P();cache=[];
 if(level===0){var paused=false;try{paused=p&&p.getPaused();}catch(e){}
-cache.push({t:(paused?"▶  재생":"❙❙  일시정지"),f:function(){var q=P();try{if(q.getPaused())q.play();else q.pause();}catch(e){}build();draw();}});
-cache.push({t:"자막  ›",f:function(){level=1;idx=0;build();draw();}});
-cache.push({t:"다음 화",f:function(){var q=P();try{q.playNextEpisode();}catch(e){}hide();}});}
-else{cache.push({t:"‹  뒤로",f:function(){level=0;idx=1;build();draw();}});
+cache.push({t:(paused?"▶  "+L.play:"❙❙  "+L.pause),f:function(){var q=P();try{if(q.getPaused())q.play();else q.pause();}catch(e){}build();draw();}});
+cache.push({t:L.subtitles+"  ›",f:function(){level=1;idx=0;build();draw();}});
+if(nextId())cache.push({t:L.next,next:true});}
+else{cache.push({t:"‹  "+L.back,f:function(){level=0;idx=1;build();draw();}});
 try{var list=p.getTimedTextTrackList();var cur=null;try{cur=p.getTimedTextTrack();}catch(e){}
 var cid=cur&&(cur.trackId||cur.id);
 list.forEach(function(tr){var tid=tr.trackId||tr.id;var on=(tid===cid);
@@ -217,14 +271,31 @@ d.innerHTML=h;d.style.display="block";var sel=d.children[idx];if(sel){try{sel.sc
 function hide(){active=false;if(EL)EL.style.display="none";}
 function open(){active=true;level=0;idx=0;build();draw();}
 return{
-ok:function(){if(!active){open();return "1:open";}var it=cache[idx];if(it&&it.f)it.f();return active?"1:ok":"0:ok";},
+ok:function(){if(!active){
+var ss=["player-skip-intro","player-skip-recap","watch-video-skip-content","next-episode-seamless-button-draining","next-episode-seamless-button"];
+for(var i=0;i<ss.length;i++){var e=document.querySelector('[data-uia="'+ss[i]+'"]');if(e&&e.offsetParent!==null){try{e.click();return "1:skip";}catch(x){}}}
+open();return "1:open";}
+var it=cache[idx];
+if(it&&it.next){var id=nextId();hide();return id?("2:next:"+id):"1:nonext";}
+if(it&&it.f)it.f();return active?"1:ok":"0:ok";},
 move:function(d){if(!active){open();return "1:open";}idx=(idx+d+cache.length)%cache.length;draw();return "1:m"+idx;},
 exit:function(){if(level===1){level=0;idx=1;build();draw();return "1:back";}hide();return "0:exit";}
-};})();}'''
+};})();}'''.replace('__OSD_LABELS__', json.dumps(OSD_LABELS, ensure_ascii=False))
+
+
+def _runtime_file():
+    """The file whose mtime identifies this build: the exe when frozen (PyInstaller runs
+    the entry script from its archive, so __file__ does NOT exist on disk), else this
+    script. player._code_ver() applies the same rule."""
+    if getattr(sys, 'frozen', False):
+        return sys.executable
+    return os.path.abspath(__file__)
+
+
 try:
     # restart the daemon on code change OR subtitle-font change (the font is applied at
     # launch, so a running daemon must relaunch to pick up a newly chosen font).
-    _CODE_VER = (str(int(os.path.getmtime(os.path.abspath(__file__))))
+    _CODE_VER = (str(int(os.path.getmtime(_runtime_file())))
                  + '|' + os.environ.get('NF_FONT_NAME', ''))
 except Exception:
     _CODE_VER = '0'
@@ -233,12 +304,24 @@ READY_JS = ('!!(window.netflix&&netflix.appContext&&netflix.appContext.state&&'
             'netflix.appContext.state.pathEvaluator&&netflix.reactContext&&'
             'netflix.reactContext.models.userInfo&&netflix.reactContext.models.userInfo.data.authURL)')
 
-# fresh page context: shakti session bits + the current LoCo (home) root id.
+# True only on the real home page (/browse), NOT /browse/genre/<id>, /search, /watch …
+# (a genre page also has a LoCo root in falcorCache, so locoRoot alone can't tell them apart)
+_ON_HOME_JS = '/^https?:\\/\\/[^\\/]+\\/browse\\/?(\\?.*)?$/.test(location.href)'
+
+# fresh page context: shakti session bits + the current LoCo root id + where the page is.
 CONTEXT_JS = ('(function(){try{var m=netflix.reactContext.models,ui=m.userInfo.data,sd=m.serverDefs.data;'
               'var root=null;try{var lc=netflix.falcorCache&&netflix.falcorCache.locos;'
               'if(lc){root=Object.keys(lc).filter(function(k){return k.indexOf("$")<0;})[0];}}catch(e){}'
               'return JSON.stringify({authURL:ui.authURL,build:sd.BUILD_IDENTIFIER,guid:ui.guid,'
-              'country:ui.countryOfSignup,locoRoot:root});}catch(e){return JSON.stringify({err:String(e)});}})()')
+              'country:ui.countryOfSignup,locoRoot:root,url:location.href,home:' + _ON_HOME_JS + ','
+              # the ACTIVE profile: reactContext's userInfo.guid is the account owner's and
+              # does not change on a profile switch; Apollo's ROOT_QUERY.currentProfile does
+              'profile:(function(){try{var c=netflix.appContext.state.graphqlClient.cache.extract();'
+              'var r=(c.ROOT_QUERY||{}).currentProfile;var m=r&&r.__ref&&r.__ref.match(/"guid":"([^"]+)"/);'
+              'return m?m[1]:null;}catch(e){return null;}})()});'
+              # while the page is still loading (no netflix.* yet) report the URL-derived
+              # `home` flag too, so _go_home doesn't re-navigate a /browse load every tick
+              '}catch(e){return JSON.stringify({err:String(e),url:location.href,home:' + _ON_HOME_JS + '});}})()')
 
 
 def _falcor_get(window, paths, timeout_s=20):
@@ -301,7 +384,10 @@ SEARCH_EXTRACT_JS = (
     'var m=ue.match(/^(Movie|Show|Episode):\\{"videoId":(\\d+)\\}/);if(!m)return;'
     'var art=null;var ar=(n.contextualArtwork||{}).__ref;if(ar&&c[ar]){var ae=c[ar];'
     'Object.keys(ae).forEach(function(f){if(art)return;try{if(ae[f]&&ae[f].url)art=ae[f].url;}catch(_){}});}'
-    'out.push({id:m[2],type:m[1].toLowerCase(),title:n.displayString,art:art});});'
+    'var syn=null;var ent=c[ue]||{};Object.keys(ent).forEach(function(f){if(syn)return;'
+    'if(/ynopsis/.test(f)){var v=ent[f];if(typeof v==="string")syn=v;'
+    'else if(v&&typeof v.text==="string")syn=v.text;}});'
+    'out.push({id:m[2],type:m[1].toLowerCase(),title:n.displayString,art:art,synopsis:syn});});'
     'return JSON.stringify(out);}catch(e){return "[]";}})()')
 
 
@@ -355,9 +441,9 @@ def _episodes_get(window, vid, timeout=15):
             break
         # /title can bounce to the "Who's watching" gate; pick the profile and reload it
         try:
-            if i % 4 == 3 and window.evaluate_js('document.querySelectorAll(".profile-link").length'):
+            if i % 4 == 3 and _on_profile_gate(window):
                 window.evaluate_js('window.__PSEL=0')
-                window.evaluate_js(SELECT_PROFILE_JS)
+                window.evaluate_js(_select_profile_js())
                 time.sleep(1.5)
                 window.evaluate_js(title_js)
         except Exception:
@@ -410,102 +496,219 @@ def _episodes_get(window, vid, timeout=15):
     return result
 
 
-def _switch_profile(window, index=0):
-    """Open the 'Who's watching' gate in the foreground for the user to pick a profile.
+# Header account menu: one <button data-uia="navigation+profile-menu+switch-profile-<GUID>">
+# (or "...switch-profile-kids-<GUID>") per OTHER profile. Clicking it switches in place.
+# (/ProfilesGate now just redirects to /browse, so the gate can't be summoned by URL.)
+_SWITCH_BTN_JS = ('(function(g){var b=document.querySelector(\'[data-uia^="navigation+profile-menu+switch-profile"]'
+                  '[data-uia$="-\'+g+\'"]\');if(!b)return "nobtn";b.click();return "clicked";})(%s)')
 
-    Netflix blocks programmatic profile switching (synthetic clicks don't trigger the
-    React handler and /SwitchProfile?tkn= does nothing on a direct navigation), so the
-    only reliable switch is a real user click. We surface the gate; the user clicks.
-    """
+
+def _active_profile(window):
     try:
-        window.evaluate_js("location.assign('https://www.netflix.com/ProfilesGate')")
+        return (json.loads(window.evaluate_js(CONTEXT_JS) or '{}') or {}).get('profile') or ''
     except Exception:
-        pass
-    time.sleep(1)
-    AUTH_SHOWN[0] = True   # auto-minimize once the user picks a profile (home reached)
-    _restore(window)       # bring the gate forward (ctypes SetForegroundWindow)
-    return {'shown': True}
+        return ''
 
 
-# Scroll ONE row (matched by its title) fully right so Netflix lazy-loads box art for all
-# of its tiles (only ~8 load initially). %s is filled with the JSON-quoted row title.
-WARMROW_JS = (
-    "(function(t){"
-    "var rows=document.querySelectorAll(\".lolomoRow,[class*='lolomoRow']\");"
-    "for(var i=0;i<rows.length;i++){var r=rows[i],"
-    "h=r.querySelector(\".rowTitle,[class*='rowTitle'],h2\");"
-    "if(h&&(h.textContent||'').trim()===t){"
-    "var sl=r.querySelector(\".sliderContent,[class*='sliderContent']\");"
-    "if(sl){try{sl.scrollLeft=sl.scrollWidth;}catch(e){}}"
-    "r.querySelectorAll(\".handleNext,[class*='handleNext']\").forEach("
-    "function(b){try{b.click();}catch(e){}});return 'ok';}}return 'nf';})(%s)")
-
-
-def _warm_row(window, title):
-    """Scroll just the named row a few times so the rest of its tiles load box art."""
-    if not title:
-        return
-    js = WARMROW_JS % json.dumps(title)
-    for _ in range(4):
-        try:
-            window.evaluate_js(js)
-        except Exception:
-            pass
-        time.sleep(0.9)
-
-
-def _genre(window, gid, timeout=25):
-    """Navigate to a genre/category page and return its LoCo root (rows are then read
-    by falcor like the home). Renders off-screen so the page prefetches, no flash."""
+def _switch_profile(window, index=0, guid='', timeout=25):
+    """Switch to a profile — by guid via the header account menu's switch button (works
+    from any page with the nav header), else at the 'Who's watching' gate by guid/index.
+    Success is judged on the ACTIVE profile (Apollo currentProfile). Returns {ok, guid}.
+    If nothing works in time, surface the window so the user can click."""
+    try:
+        index = int(index)
+    except (TypeError, ValueError):
+        index = 0
+    PROFILE_INDEX[0] = index        # the monitor / episodes gate-handling now use it too
+    PROFILE_GUID[0] = str(guid or '')
     _set_fullscreen(window, False)
     _render_offscreen(window)
+    if guid and _active_profile(window) == guid:
+        return {'ok': True, 'guid': guid, 'changed': False}
+    # make sure we're on a page with the nav header (the home)
     try:
-        window.evaluate_js("location.assign('https://www.netflix.com/browse/genre/%s')" % str(gid))
+        if not (json.loads(window.evaluate_js(CONTEXT_JS) or '{}') or {}).get('home'):
+            window.evaluate_js("window.__PSEL=0;location.assign('https://www.netflix.com/browse')")
     except Exception:
         pass
-    result = {}
-    for _ in range(timeout):
+    clicked = False
+    for _ in range(timeout * 2):
+        time.sleep(0.5)
         try:
-            ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
-            if ctx.get('locoRoot'):
-                result = ctx
-                break
-            url = window.evaluate_js('location.href') or ''
-            if '/account' in url:
-                window.evaluate_js("location.assign('https://www.netflix.com/browse/genre/%s')" % str(gid))
+            if not clicked:
+                if _on_profile_gate(window):
+                    clicked = window.evaluate_js(_select_profile_js()) == 'clicked'
+                elif guid:
+                    clicked = window.evaluate_js(_SWITCH_BTN_JS % json.dumps(guid)) == 'clicked'
+                continue
+            cur = _active_profile(window)
+            if cur and (not guid or cur == guid) and not _on_profile_gate(window):
+                return {'ok': True, 'guid': cur, 'changed': True}
         except Exception:
             pass
-        time.sleep(1)
-    _focus_kodi()
-    return result   # window stays off-screen (rendered there); no flash
+    # fallback: let the user pick in the visible window (the monitor hides it once home)
+    AUTH_SHOWN[0] = True
+    _restore(window)
+    return {'ok': False, 'shown': True}
 
 
-def _go_home(window, timeout=30):
-    """Navigate back to /browse (from search/play) and re-resolve the home root. The
-    window must render for akira to prefetch the home LoCo, so un-minimize first, then
-    tuck it away again once home is ready."""
+def _on_profile_gate(window):
+    """True while the 'Who's watching?' gate is up (profile tiles present; see GATE_SEL)."""
+    try:
+        return (window.evaluate_js('document.querySelectorAll(%s).length' % json.dumps(GATE_SEL)) or 0) >= 1
+    except Exception:
+        return False
+
+
+# ---------------------------------------------------------------- Pinot pages ---
+# Since the 2026-10 Netflix build the browse pages (/browse, /browse/genre/<id>,
+# /browse/my-list) are no longer falcor LoCo ("locos") but GraphQL "Pinot" pages, kept
+# in the page's Apollo cache:  Pinot*Page -> sections(...).edges -> PinotCarouselSection
+# {displayString, entities.edges -> Pinot*EntityTreatment {displayString, unifiedEntity
+# -> Movie|Show:{videoId}, contextualArtwork.artwork.url}}. Sections and each row's
+# entities are paginated by the page itself (infinite scroll / carousel arrows), so we
+# scroll/click the off-screen page to load more, then read the cache. Falcor still
+# serves per-video data (videos[id].synopsis/bookmark/episodes), so that stays.
+PINOT_ROWS_JS = r'''(function(opt){try{
+var c=netflix.appContext.state.graphqlClient.cache.extract();
+var best=null,bestN=-1;
+Object.keys(c).forEach(function(k){if(!/^Pinot\w*Page:/.test(k))return;var p=c[k];var n=0;
+ Object.keys(p).forEach(function(f){if(f.indexOf("sections")===0)n+=((p[f]||{}).edges||[]).length;});
+ if(n>bestN){bestN=n;best=p;}});
+if(!best)return JSON.stringify({rows:[],err:"no pinot page"});
+var seen={},rows=[],idx=0;
+Object.keys(best).forEach(function(f){if(f.indexOf("sections")!==0)return;
+ ((best[f]||{}).edges||[]).forEach(function(ed){var ref=(ed.node||{}).__ref;if(!ref||seen[ref])return;seen[ref]=1;
+  var s=c[ref];if(!s||!/CarouselSection/.test(s.__typename||""))return;
+  var row={index:idx++,title:s.displayString||"",id:s.id||"",total:((s.entities||{}).totalCount)||0,videos:[]};
+  if(opt.videos||opt.row===row.index||(opt.title&&opt.title===row.title)){
+   var vseen={};
+   Object.keys(s).forEach(function(g){if(g.indexOf("entities")!==0)return;
+    ((s[g]||{}).edges||[]).forEach(function(e){var tr=c[(e.node||{}).__ref];if(!tr)return;
+     var ue=(tr.unifiedEntity||{}).__ref||"";var m=ue.match(/^(Movie|Show|Episode|Supplemental):\{"videoId":(\d+)\}/);
+     if(!m||vseen[m[2]])return;vseen[m[2]]=1;
+     var art=null,ca=tr.contextualArtwork;if(ca){Object.keys(ca).forEach(function(h){if(art)return;var v=ca[h];if(v&&v.url)art=v.url;});}
+     var ent=c[ue]||{},syn=null;
+     Object.keys(ent).forEach(function(h){if(syn||h.indexOf("contextualSynopsis")!==0)return;var v=ent[h];
+      if(v&&v.__ref)v=c[v.__ref];if(v&&typeof v.text==="string")syn=v.text;});
+     row.videos.push({id:m[2],type:m[1].toLowerCase(),title:tr.displayString||ent.title||m[2],art:art,
+      synopsis:syn,bookmark:(ent.bookmark&&ent.bookmark.position)||null,runtime:ent.runtimeSec||ent.displayRuntimeSec||null,
+      isOriginal:ent.hasOriginalTreatment||false});
+    });});
+  }
+  rows.push(row);
+ });});
+return JSON.stringify({rows:rows});
+}catch(e){return JSON.stringify({rows:[],err:String(e)});}})(%s)'''
+
+# Bring the page's "browse-page+sentinel" INTO the viewport: its IntersectionObserver then
+# loads the next batch of sections (~16). Scrolling straight to the bottom flies past it
+# (no intersection -> nothing loads). Returns "nosent" once every section is loaded.
+SCROLL_SENTINEL_JS = ('(function(){var s=document.querySelector("[data-uia=\'browse-page+sentinel\']");'
+                      'if(!s)return "nosent";var r=s.getBoundingClientRect();'
+                      'window.scrollBy(0,r.top-innerHeight/2);return "ok";})()')
+# click the right arrow of the carousel whose heading text equals the title (loads the
+# row's next entity page); returns "clicked" / "nf"
+ROW_NEXT_JS = r'''(function(t,i){var rows=document.querySelectorAll('[data-uia^="carousel-row-section-"]');var r=null;
+for(var k=0;k<rows.length;k++){var h=rows[k].querySelector("h2,h3,[data-uia*=title],[data-uia*=heading]");
+ if(h&&(h.innerText||"").trim()===t){r=rows[k];break;}}
+if(!r&&rows[i])r=rows[i];if(!r)return "nf";
+try{r.scrollIntoView({block:"center"});}catch(e){}
+var b=r.querySelector('[data-uia="carousel-hawkins-right-button"]');if(!b)return "nobtn";b.click();return "clicked";})(%s,%d)'''
+
+
+def _pinot_rows(window, **opt):
+    try:
+        return json.loads(window.evaluate_js(PINOT_ROWS_JS % json.dumps(opt)) or '{}') or {}
+    except Exception as exc:
+        return {'rows': [], 'err': str(exc)}
+
+
+def _pinot_page(window, path='/browse', rows=40, row=None, title=None, n=40, videos=False, timeout=25):
+    """Serve a browse page's rows from the Pinot cache.
+      path   : /browse | /browse/genre/<id> | /browse/my-list (navigated to if not there)
+      rows   : load at least this many sections (scrolls the page)
+      row    : with title: return THAT row's videos, after paging its carousel to >= n
+      videos : include each loaded row's (currently loaded) videos
+    Returns {path, rows:[{index,title,id,total,videos}]} (videos empty unless asked)."""
     _set_fullscreen(window, False)
-    _render_offscreen(window)   # render off-screen (no visible flash) so home prefetches
-    result = {}
-    for _t in range(timeout):
+    _render_offscreen(window)
+    url = 'https://www.netflix.com' + path
+    try:
+        cur = window.evaluate_js('location.pathname') or ''
+    except Exception:
+        cur = ''
+    if cur.rstrip('/') != path.rstrip('/'):
         try:
-            ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
-            if ctx.get('locoRoot'):
-                result = ctx
-                break
-            url = window.evaluate_js('location.href') or ''
-            on_browse = '/browse' in url
-            if not on_browse or _t % 6 == 0:
-                # (re)navigate; Netflix sometimes bounces /browse -> /account mid-session
-                window.evaluate_js("window.__PSEL=0;location.assign('https://www.netflix.com/browse');")
-            else:
-                window.evaluate_js('(function(){try{var e=document.querySelectorAll(".profile-link");'
-                                   'if(e.length)e[0].click();}catch(x){}})()')
+            window.evaluate_js("window.__PSEL=0;location.assign(%s)" % json.dumps(url))
         except Exception:
             pass
-        time.sleep(1)
+    # wait for the page (handle the profile gate and the /account bounce on the way)
+    data = {}
+    for _t in range(timeout * 2):
+        data = _pinot_rows(window)
+        if data.get('rows'):
+            break
+        try:
+            if _on_profile_gate(window):
+                window.evaluate_js(_select_profile_js())
+            elif '/account' in (window.evaluate_js('location.pathname') or '') or (_t and _t % 20 == 0):
+                window.evaluate_js("window.__PSEL=0;location.assign(%s)" % json.dumps(url))
+        except Exception:
+            pass
+        time.sleep(0.5)
+    want = max(rows, (row or 0) + 1)
+    stale = 0
+    while len(data.get('rows') or []) < want and stale < 3:
+        before = len(data.get('rows') or [])
+        try:
+            if window.evaluate_js(SCROLL_SENTINEL_JS) == 'nosent':
+                break                      # everything the page has is loaded
+        except Exception:
+            pass
+        time.sleep(2.0)
+        data = _pinot_rows(window)
+        stale = stale + 1 if len(data.get('rows') or []) <= before else 0
+    if row is None and not title:
+        if videos:
+            data = _pinot_rows(window, videos=True)
+        _focus_kodi()
+        return {'path': path, 'rows': data.get('rows') or [], 'err': data.get('err')}
+    # one row: page its carousel until it holds >= n entities (or stops growing)
+    sel = _pinot_rows(window, row=row, title=title or '')
+    pick = _pick_row(sel, row, title)
+    stale, clicks = 0, 0
+    # each arrow click advances one viewport of tiles; the carousel fetches its next
+    # entity page (~16) as it nears the loaded end, so a few clicks are needed per page
+    while pick and len(pick['videos']) < min(n, pick.get('total') or n) and stale < 3 and clicks < 10:
+        before = len(pick['videos'])
+        try:
+            window.evaluate_js(ROW_NEXT_JS % (json.dumps(pick['title']), int(pick['index'])))
+        except Exception:
+            pass
+        clicks += 1
+        time.sleep(1.2)
+        sel = _pinot_rows(window, row=row, title=title or '')
+        pick = _pick_row(sel, row, title) or pick
+        stale = stale + 1 if len(pick['videos']) <= before else 0
     _focus_kodi()
-    return result   # window stays off-screen (rendered there); no flash
+    return {'path': path, 'rows': sel.get('rows') or [], 'row': pick, 'err': sel.get('err')}
+
+
+def _pick_row(data, row, title):
+    rows = data.get('rows') or []
+    if title:
+        for r in rows:
+            if r.get('title') == title:
+                return r
+    if row is not None and 0 <= int(row) < len(rows):
+        return rows[int(row)]
+    return None
+
+
+def _go_home(window, timeout=25):
+    """Navigate back to /browse (from search/play/title) and wait for the home rows."""
+    return _pinot_page(window, '/browse', rows=1, timeout=timeout)
 
 
 _FS = [False]
@@ -531,14 +734,12 @@ def _set_fullscreen(window, on):
         if not hwnd:
             return
         GWL_STYLE = -16
+        sw = u.GetSystemMetrics(0)
+        sh = u.GetSystemMetrics(1)
         if on and not _FS[0]:
-            try:
-                ctypes.windll.shcore.SetProcessDpiAwareness(2)  # per-monitor, real px
-            except Exception:
-                pass
+            # (DPI awareness is set at import, before the window exists; see top of file)
             _PREV_STYLE[0] = u.GetWindowLongW(hwnd, GWL_STYLE)
-            sw = u.GetSystemMetrics(0)
-            sh = u.GetSystemMetrics(1)
+            _set_taskbar(hwnd, True)
             u.SetWindowLongW(hwnd, GWL_STYLE, -2147483648 | 0x10000000)  # WS_POPUP|WS_VISIBLE
             # HWND_TOP(0) not TOPMOST: cover the screen but still let Alt+Tab bring another
             # window in front. 2px overscan each side, FRAMECHANGED|SHOWWINDOW.
@@ -546,7 +747,7 @@ def _set_fullscreen(window, on):
             _FS[0] = True
         elif not on and _FS[0]:
             u.SetWindowLongW(hwnd, GWL_STYLE, _PREV_STYLE[0] or 0x00CF0000)
-            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0020 | 0x0010)  # FRAMECHANGED|NOACTIVATE
+            u.SetWindowPos(hwnd, 0, -sw - 200, -sh - 200, sw, sh, 0x0020 | 0x0010)  # FRAMECHANGED|NOACTIVATE
             _FS[0] = False
             _NAV[0] = False          # leaving playback -> drop any OSD-nav state
             del _NAV_Q[:]
@@ -583,13 +784,66 @@ def _own_hwnd():
         return 0
 
 
+def _is_foreground():
+    """True only when the daemon's own window is the foreground window. The playback key
+    hook is global (system-wide), so without this an Alt+Tab away would still let our hook
+    swallow Enter/arrows and pop the OSD over another app."""
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        u.GetForegroundWindow.restype = ctypes.c_void_p
+        fg = u.GetForegroundWindow()
+        own = _own_hwnd()
+        return bool(own and fg and int(fg) == int(own))
+    except Exception:
+        return False
+
+
+def _foreground_is_daemon():
+    """True if the foreground window belongs to OUR daemon UI — our own process OR a
+    WebView2 child (msedgewebview2.exe). WebView2 renders in separate processes, so right
+    after login the focused window is an Edge child with a DIFFERENT pid; _own_hwnd()/
+    _is_foreground() miss it (they only match our own pid's window), which is why focus
+    never returned to Kodi until the user clicked. This catches the Edge-child case so the
+    monitor can hand focus back."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        k = ctypes.windll.kernel32
+        u.GetForegroundWindow.restype = ctypes.c_void_p
+        fg = u.GetForegroundWindow()
+        if not fg:
+            return False
+        pid = wintypes.DWORD()
+        u.GetWindowThreadProcessId(ctypes.c_void_p(fg), ctypes.byref(pid))
+        if pid.value == k.GetCurrentProcessId():
+            return True
+        h = k.OpenProcess(0x1000, False, pid.value)  # QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        try:
+            buf = ctypes.create_unicode_buffer(260)
+            size = wintypes.DWORD(260)
+            if k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                return buf.value.lower().endswith('msedgewebview2.exe')
+            return False
+        finally:
+            k.CloseHandle(h)
+    except Exception:
+        return False
+
+
 def _set_window_icon():
     """Replace python's default window/taskbar icon with the add-on (Netflix) icon."""
     try:
         import ctypes
         from ctypes import wintypes
         u = ctypes.windll.user32
-        ico = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'icon.ico')
+        # frozen: PyInstaller unpacks --add-data files next to sys._MEIPASS, not __file__
+        ico = os.path.join(getattr(sys, '_MEIPASS', HERE), 'icon.ico')
+        if not os.path.exists(ico):
+            ico = os.path.join(HERE, 'icon.ico')
         hwnd = _own_hwnd()
         if not (os.path.exists(ico) and hwnd):
             return
@@ -605,16 +859,49 @@ def _set_window_icon():
         pass
 
 
+def _set_taskbar(hwnd, visible):
+    """Show/hide the window's taskbar button. While the window lives off-screen a taskbar
+    button is a trap: clicking it 'activates' a window nobody can see. Toggle
+    WS_EX_TOOLWINDOW (no taskbar button) <-> WS_EX_APPWINDOW; the ex-style only takes
+    effect while the window is hidden, so hide/re-show around the change."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.windll.user32
+        if not hwnd:
+            return
+        GWL_EXSTYLE, WS_EX_TOOLWINDOW, WS_EX_APPWINDOW = -20, 0x00000080, 0x00040000
+        u.GetWindowLongW.restype = ctypes.c_long
+        u.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+        u.SetWindowLongW.restype = ctypes.c_long
+        u.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
+        ex = u.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        want = (ex & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW if visible else (ex | WS_EX_TOOLWINDOW) & ~WS_EX_APPWINDOW
+        if want == ex:
+            return
+        u.ShowWindow(hwnd, 0)                  # SW_HIDE
+        u.SetWindowLongW(hwnd, GWL_EXSTYLE, want)
+        u.ShowWindow(hwnd, 4)                  # SW_SHOWNOACTIVATE
+    except Exception:
+        pass
+
+
 def _render_offscreen(window):
     """Show the window OFF-SCREEN so it keeps rendering, WITHOUT activating it (so Kodi
-    keeps keyboard focus). SW_SHOWNOACTIVATE + a no-activate move; falls back to pywebview."""
+    keeps keyboard focus) and without a taskbar button. SW_SHOWNOACTIVATE + a no-activate
+    move; falls back to pywebview."""
     try:
         import ctypes
         u = ctypes.windll.user32
         hwnd = _own_hwnd()
         if hwnd:
             u.ShowWindow(hwnd, 4)   # SW_SHOWNOACTIVATE (un-minimize / show, no focus steal)
-            u.SetWindowPos(hwnd, 0, -4000, -4000, 1600, 900, 0x0014)  # NOACTIVATE|NOZORDER (wide -> more art tiles render)
+            # screen-sized (physical px) so Netflix lays the page out at full width: more
+            # tiles per row / sections per viewport are loaded. Placed entirely beyond the
+            # top-left of the virtual screen so nothing shows.
+            sw, sh = u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+            u.SetWindowPos(hwnd, 0, -sw - 200, -sh - 200, sw, sh, 0x0014)  # NOACTIVATE|NOZORDER
+            _set_taskbar(hwnd, False)
             return
     except Exception:
         pass
@@ -650,6 +937,17 @@ def _force_foreground(hwnd):
         for a in (cur, fgt):
             if a and a != tgt and u.AttachThreadInput(a, tgt, True):
                 attached.append(a)
+        # drop the foreground-lock timeout so SetForegroundWindow actually takes (Windows
+        # otherwise silently refuses a foreground change from the background) — and put the
+        # user's value back afterwards: it is a SYSTEM-WIDE setting, not ours to keep.
+        prev_timeout = None
+        try:
+            val = ctypes.c_uint(0)
+            if u.SystemParametersInfoW(0x2000, 0, ctypes.byref(val), 0):   # SPI_GETFOREGROUNDLOCKTIMEOUT
+                prev_timeout = val.value
+            u.SystemParametersInfoW(0x2001, 0, 0, 0)                        # SPI_SETFOREGROUNDLOCKTIMEOUT = 0
+        except Exception:
+            pass
         try:
             u.keybd_event(0x12, 0, 0, 0)       # ALT down
             u.keybd_event(0x12, 0, 0x0002, 0)  # ALT up
@@ -661,6 +959,11 @@ def _force_foreground(hwnd):
         finally:
             for a in attached:
                 u.AttachThreadInput(a, tgt, False)
+            if prev_timeout:
+                try:
+                    u.SystemParametersInfoW(0x2001, 0, ctypes.c_void_p(prev_timeout), 0)
+                except Exception:
+                    pass
     except Exception:
         pass
 
@@ -702,15 +1005,37 @@ def _focus_kodi():
     _force_foreground(_kodi_hwnd())
 
 
+def _move_onscreen(hwnd):
+    """The window normally lives OFF-SCREEN (-4000,-4000; see _render_offscreen). Before
+    showing it to the user (sign-in / profile gate / play) put it back on the primary
+    screen, centred, else 'show' just shows an invisible window."""
+    try:
+        import ctypes
+        u = ctypes.windll.user32
+        if not hwnd:
+            return
+        sw, sh = u.GetSystemMetrics(0), u.GetSystemMetrics(1)
+        # physical px (the process is per-monitor DPI aware): size the window to ~5/6 of
+        # the screen so it is comfortable on a 4K display too, then centre it
+        w, h = int(sw * 5 / 6), int(sh * 5 / 6)
+        _set_taskbar(hwnd, True)
+        u.SetWindowPos(hwnd, 0, (sw - w) // 2, (sh - h) // 2, w, h, 0x0040)  # SWP_SHOWWINDOW
+    except Exception:
+        pass
+
+
 def _restore(window):
-    """Un-minimize and bring the daemon's own window forward WITH keyboard focus (so the
-    Back key and Netflix player keys work during playback)."""
+    """Bring the daemon's own window on-screen and forward WITH keyboard focus (so the
+    user can sign in / pick a profile, and Back / player keys work during playback)."""
     for method in ('restore', 'show'):
         try:
             getattr(window, method)()
         except Exception:
             pass
-    _force_foreground(_own_hwnd())
+    hwnd = _own_hwnd()
+    if not _FS[0]:
+        _move_onscreen(hwnd)
+    _force_foreground(hwnd)
 
 
 def _start_rpc(window, port):
@@ -733,15 +1058,19 @@ def _start_rpc(window, port):
 
         def do_GET(self):
             if self.path == '/health':
-                # never blocks: refresh readiness only if the window is free this instant
+                # never blocks: refresh readiness only if the window is free this instant.
+                # 'login' = the page sits on the sign-in form, so a caller waiting for
+                # 'ready' can give up at once instead of waiting out its timeout.
                 if _rpc_lock.acquire(blocking=False):
                     try:
                         _ready[0] = bool(window.evaluate_js(READY_JS))
+                        _login[0] = '/login' in (window.evaluate_js('location.href') or '')
                     except Exception:
                         pass
                     finally:
                         _rpc_lock.release()
-                return send(self, 200, {'ready': _ready[0], 'ver': _CODE_VER, 'playing': _FS[0]})
+                return send(self, 200, {'ready': _ready[0], 'login': _login[0],
+                                        'ver': _CODE_VER, 'playing': _FS[0]})
             if self.path == '/quit':
                 send(self, 200, {'ok': True})
                 threading.Timer(0.3, lambda: os._exit(0)).start()
@@ -782,10 +1111,13 @@ def _start_rpc(window, port):
                 send(self, 200, {'seasons': _episodes_get(window, req.get('videoId', ''))})
             elif self.path == '/home':
                 send(self, 200, _go_home(window))
-            elif self.path == '/genre':
-                send(self, 200, _genre(window, req.get('id', '')))
+            elif self.path == '/pinot':
+                send(self, 200, _pinot_page(
+                    window, req.get('path') or '/browse', rows=int(req.get('rows') or 40),
+                    row=req.get('row'), title=req.get('title'), n=int(req.get('n') or 40),
+                    videos=bool(req.get('videos'))))
             elif self.path == '/switch':
-                send(self, 200, _switch_profile(window, req.get('index', 0)))
+                send(self, 200, _switch_profile(window, req.get('index', 0), req.get('guid', '')))
             elif self.path == '/eval':
                 try:
                     send(self, 200, {'result': window.evaluate_js(req.get('js', ''))})
@@ -804,24 +1136,6 @@ def _start_rpc(window, port):
                     send(self, 200, {'ok': True})
                 except Exception as exc:
                     send(self, 200, {'err': str(exc)})
-            elif self.path == '/stop':
-                # leave the watch page so the WebView frees the audio device for Kodi
-                try:
-                    window.evaluate_js('window.__TOKODI=0')
-                    window.load_url('https://www.netflix.com/browse')
-                    _set_fullscreen(window, False)
-                    _render_offscreen(window)
-                    _focus_kodi()
-                    send(self, 200, {'ok': True})
-                except Exception as exc:
-                    send(self, 200, {'err': str(exc)})
-            elif self.path == '/warmrow':
-                # scroll one row so all its tiles load box art (the caller caches the result)
-                try:
-                    _warm_row(window, req.get('title', ''))
-                    send(self, 200, {'ok': True})
-                except Exception as exc:
-                    send(self, 200, {'err': str(exc)})
             else:
                 send(self, 404, {'err': 'not found'})
 
@@ -833,7 +1147,6 @@ def _start_rpc(window, port):
 
 
 def injector(window):
-    captured = False
     while True:
         try:
             with _rpc_lock:
@@ -844,8 +1157,6 @@ def injector(window):
                     window.evaluate_js(LOAD_JS)
                 if STYLE_JS:
                     window.evaluate_js(STYLE_JS)
-                if SESSION_OUT and not captured:
-                    captured = _capture_session(window)
         except Exception:
             pass
         time.sleep(3)
@@ -870,6 +1181,21 @@ def _nav_handler(window):
                     _rpc_lock.release()
             _osd_log('%s -> %r  (_FS=%s)' % (act, res, _FS[0]))
             r = str(res)
+            if r.startswith('2:next:'):
+                # OSD "Next episode": navigate natively (window.load_url, under the lock) so
+                # the monitor never sees a transient non-/watch state and bounce to browse.
+                nid = r.split(':', 2)[2]
+                if nid.isdigit() and _rpc_lock.acquire(timeout=3):
+                    try:
+                        window.load_url('https://www.netflix.com/watch/%s' % nid)
+                        _force_foreground(_own_hwnd())
+                    except Exception:
+                        pass
+                    finally:
+                        _rpc_lock.release()
+                _NAV[0] = False
+                _NAV_LAST[0] = time.time()
+                continue
             if r.startswith('1:'):
                 _NAV[0] = True
             elif r.startswith('0:'):
@@ -887,33 +1213,52 @@ def _nav_handler(window):
 
 
 # If Netflix shows the "Who's watching?" profile gate there is no home LoCo; pick a
-# profile (NF_PROFILE_INDEX, default the first) so the home loads.
-PROFILE_INDEX = int(os.environ.get('NF_PROFILE_INDEX', '0') or '0')
-SELECT_PROFILE_JS = ('(function(idx){if(window.__PSEL)return "waiting";'
-                     'var els=document.querySelectorAll(".profile-link");'
-                     'if(els&&els.length){window.__PSEL=1;(els[idx]||els[0]).click();return "clicked";}'
-                     'return "none";})(%d)' % PROFILE_INDEX)
+# profile so the home loads: by guid (NF_PROFILE_GUID, exact) else by position
+# (NF_PROFILE_INDEX, default the first). /switch updates both.
+try:
+    PROFILE_INDEX = [int(os.environ.get('NF_PROFILE_INDEX', '0') or '0')]
+except ValueError:
+    PROFILE_INDEX = [0]
+PROFILE_GUID = [os.environ.get('NF_PROFILE_GUID', '') or '']
+
+# The gate's profile tiles. Netflix rebuilt the gate in 2026-10: the old `.profile-link`
+# anchors became <button data-uia="profile-selector+tile-<GUID>">; match both. The
+# home page's header account menu has no such tile, so this also tells gate from home.
+GATE_SEL = '.profile-link,[data-uia^="profile-selector+tile-"]'
 
 
-def _auto_minimize(window):
-    # The akira UI only prefetches the home LoCo while the window renders, so we load
-    # it visible, (auto-pick a profile if gated,) wait until the home root is cached,
-    # then tuck the window away. falcor RPC keeps working minimized; /play, /show restore.
-    for _ in range(90):
-        try:
-            if window.evaluate_js(READY_JS):
-                ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
-                if ctx.get('locoRoot'):
-                    time.sleep(1)
-                    _render_offscreen(window)
-                    return
-                window.evaluate_js(SELECT_PROFILE_JS)  # likely on the profile gate
-        except Exception:
-            pass
-        time.sleep(1)
+def _select_profile_js():
+    return ('(function(idx,guid){if(window.__PSEL)return "waiting";'
+            'var els=document.querySelectorAll(%s);if(!els||!els.length)return "none";'
+            'var el=null;if(guid){el=document.querySelector(\'[data-uia="profile-selector+tile-\'+guid+\'"]\');}'
+            'if(!el)el=els[idx]||els[0];window.__PSEL=1;el.click();return "clicked";'
+            '})(%d,%s)' % (json.dumps(GATE_SEL), PROFILE_INDEX[0], json.dumps(PROFILE_GUID[0])))
 
 
-AUTH_SHOWN = [True]    # release focus to Kodi once home is reached (first load too)
+# While browsing (window off-screen, NOT playing) Netflix auto-plays billboard/hover
+# preview trailers WITH audio -> the user hears sound with no picture. Mute (and pause)
+# every media element on the browse page. Never runs while playing (guarded by _FS).
+MUTE_PREVIEWS_JS = (
+    "(function(){try{"
+    "function brs(){return location.href.indexOf('/watch/')<0;}"
+    "function kill(m){try{if(brs()){m.muted=true;m.volume=0;if(!m.paused)m.pause();}}catch(e){}}"
+    "function sweep(){try{if(brs())document.querySelectorAll('video,audio').forEach(kill);}catch(e){}}"
+    "if(!window.__NFMUTE){window.__NFMUTE=1;"
+    # capture media the INSTANT it loads/plays so it never opens (and holds) the HDMI audio
+    # endpoint -> no contention with Kodi's own audio device while browsing.
+    "['loadstart','loadedmetadata','loadeddata','canplay','play','playing','volumechange'].forEach("
+    "function(ev){document.addEventListener(ev,function(e){var t=e&&e.target;"
+    "if(t&&t.tagName&&(t.tagName=='VIDEO'||t.tagName=='AUDIO'))kill(t);},true);});"
+    "try{new MutationObserver(sweep).observe(document.documentElement,{childList:true,subtree:true});}catch(e){}"
+    "}"
+    "sweep();}catch(e){}})()")
+
+
+# True only while the window has been SURFACED for the user (/show sign-in, /switch
+# fallback): then the monitor neither auto-picks a profile nor reclaims the foreground
+# until the user is signed in and past the gate. At launch the window is off-screen, so
+# this starts False (the first load's gate is auto-entered and focus stays with Kodi).
+AUTH_SHOWN = [False]
 
 
 def window_monitor(window):
@@ -963,26 +1308,57 @@ def window_monitor(window):
                         was_watching = False
                         reload_count = 0
                         stuck = 0
-                elif AUTH_SHOWN[0]:
-                    ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
-                    if ctx.get('locoRoot'):
-                        _hide_to_kodi(window)
-                        AUTH_SHOWN[0] = False
                 else:
-                    # Not playing and not surfaced for auth: the browse window must not hold
-                    # focus. If it grabbed the foreground (e.g. just after login), push it
-                    # off-screen and hand focus back to Kodi.
+                    # Not in real playback -> kill any auto-playing preview/trailer audio on
+                    # the (off-screen) browse page so it never leaks sound with no picture.
                     try:
-                        import ctypes
-                        u = ctypes.windll.user32
-                        u.GetForegroundWindow.restype = ctypes.c_void_p
-                        fg = u.GetForegroundWindow()
-                        own = _own_hwnd()
-                        if own and fg and int(fg) == int(own):
-                            _render_offscreen(window)
-                            _focus_kodi()
+                        window.evaluate_js(MUTE_PREVIEWS_JS)
                     except Exception:
                         pass
+                    # Browse is direct-HTTP now, so the daemon window NEVER needs to reach
+                    # home — after login it only has to get out of the way. So focus handoff
+                    # is keyed on SIGN-IN (guid), NOT on locoRoot. (The old locoRoot gate is
+                    # why a stuck "Who's watching?" screen — or a Netflix build that moved the
+                    # loco cache — left the window holding the foreground: home never loaded,
+                    # so the hide+focus-Kodi step never fired and the remote was dead until a
+                    # mouse click.) We still auto-pick a profile off-screen so later playback
+                    # has one, but we don't BLOCK the focus handoff on it.
+                    try:
+                        ctx = json.loads(window.evaluate_js(CONTEXT_JS) or '{}')
+                    except Exception:
+                        ctx = {}
+                    try:
+                        href = window.evaluate_js('location.href') or ''
+                    except Exception:
+                        href = ''
+                    on_login = '/login' in href
+                    signed_in = bool(ctx.get('guid'))
+                    on_gate = signed_in and not on_login and _on_profile_gate(window)
+                    # keep the off-screen session progressing past the profile gate (for
+                    # playback) by entering the configured profile — but NOT while the window
+                    # is surfaced for the user (/switch fallback): then it is theirs to click.
+                    if on_gate and not AUTH_SHOWN[0]:
+                        try:
+                            window.evaluate_js('window.__PSEL=0')
+                            window.evaluate_js(_select_profile_js())
+                        except Exception:
+                            pass
+                    if AUTH_SHOWN[0]:
+                        # surfaced for auth: once signed in and past the login form AND the
+                        # profile gate, hide the window and hand the remote back to Kodi.
+                        if signed_in and not on_login and not on_gate:
+                            _hide_to_kodi(window)
+                            AUTH_SHOWN[0] = False
+                    else:
+                        # not surfaced for auth: if our window re-grabbed the foreground, push
+                        # it off-screen and return focus to Kodi. Runs every tick, so a late
+                        # focus grab is reclaimed within ~0.5s without a mouse click.
+                        try:
+                            if _foreground_is_daemon():
+                                _render_offscreen(window)
+                                _focus_kodi()
+                        except Exception:
+                            pass
             except Exception:
                 pass
             finally:
@@ -1016,7 +1392,10 @@ def _back_hook_thread():
             try:
                 if nCode == 0 and wParam in (WM_KEYDOWN, WM_SYSKEYDOWN):
                     vk = lParam[0].vkCode
-                    if _FS[0]:
+                    # Only intercept while WE are the foreground window. The hook is global,
+                    # so after Alt+Tab to another app our keys (Enter/arrows/Back) must pass
+                    # through untouched instead of popping the OSD over someone else's window.
+                    if _FS[0] and _is_foreground():
                         if vk in (0x1B, 0x08, 0xA6):          # ESC / Backspace / BrowserBack
                             if _NAV[0]:
                                 _nav_queue('exit')            # close the OSD, stay in playback
@@ -1112,8 +1491,110 @@ def _cleanup_stale(profile, port):
             pass
 
 
+def _gpu_driver_sig():
+    """Signature of all display-adapter driver versions (registry, no WMI). Changes
+    whenever any GPU driver is updated."""
+    import winreg
+    base = r'SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}'
+    sig = []
+    try:
+        key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, base)
+    except OSError:
+        return ''
+    try:
+        i = 0
+        while True:
+            try:
+                sub = winreg.EnumKey(key, i)
+            except OSError:
+                break
+            i += 1
+            if not sub.isdigit():
+                continue
+            try:
+                sk = winreg.OpenKey(key, sub)
+                try:
+                    ver, _ = winreg.QueryValueEx(sk, 'DriverVersion')
+                    sig.append('%s=%s' % (sub, ver))
+                finally:
+                    sk.Close()
+            except OSError:
+                continue
+    finally:
+        key.Close()
+    return ';'.join(sorted(sig))
+
+
+def _playready_sig():
+    """Fingerprint of the system PlayReady / MediaFoundation runtime DLLs. A Windows
+    security update that swaps these files invalidates the hardware-DRM provisioning
+    cached in this WebView2 profile, producing the SAME D7361 as a GPU-driver change
+    (observed 2026-07-15: KB updates replaced PlayReady.dll/mfplat.dll -> D7361 next
+    day, driver unchanged). Uses size+mtime (no version parse, no pywin32) -- both
+    change when an update replaces the file."""
+    parts = []
+    sysroot = os.environ.get('SystemRoot', r'C:\Windows')
+    for name in ('Windows.Media.Protection.PlayReady.dll', 'mfplat.dll'):
+        path = os.path.join(sysroot, 'System32', name)
+        try:
+            st = os.stat(path)
+            parts.append('%s=%d/%d' % (name, st.st_size, int(st.st_mtime)))
+        except OSError:
+            continue
+    return ';'.join(parts)
+
+
+def _drm_guard(profile):
+    """Prevent recurring Netflix D7361. The PlayReady/MediaFoundation hardware-DRM
+    provisioning cached in this WebView2 profile is bound to (a) the GPU driver and
+    (b) the system PlayReady runtime DLLs. A GPU-driver update OR a Windows update that
+    replaces those DLLs invalidates the cache, but neither a reboot nor a daemon restart
+    clears it (it's files, not a process lock) -> playback errors with D7361 until the
+    cache is purged. When the combined signature changes since last launch, delete
+    MediaFoundationCdmStore so WebView2 re-provisions fresh on the next play. Login is
+    untouched (cookies live elsewhere). Runs BEFORE the window is created, so the profile
+    is unlocked. See memory nfbridge-d7361-cdmstore."""
+    try:
+        gpu = _gpu_driver_sig()
+        pr = _playready_sig()
+        if not gpu and not pr:
+            return
+        sig = gpu + '|' + pr
+        marker = os.path.join(profile, '.nf_gpu_drv')
+        prev = ''
+        try:
+            with open(marker, encoding='utf-8') as fh:
+                prev = fh.read().strip()
+        except OSError:
+            prev = ''
+        if prev and prev != sig:
+            import shutil
+            store = os.path.join(profile, 'EBWebView', 'Default', 'MediaFoundationCdmStore')
+            try:
+                shutil.rmtree(store)
+                sys.stderr.write('nfbridge: DRM runtime changed (GPU driver / PlayReady update) -> cleared MediaFoundationCdmStore (D7361 guard)\n')
+            except FileNotFoundError:
+                pass
+            except OSError as exc:
+                sys.stderr.write('nfbridge: could not clear CDM store: %s\n' % exc)
+        if prev != sig:
+            try:
+                if not os.path.isdir(profile):
+                    os.makedirs(profile)
+                with open(marker, 'w', encoding='utf-8') as fh:
+                    fh.write(sig)
+            except OSError:
+                pass
+    except Exception as exc:  # never let the guard break daemon startup
+        try:
+            sys.stderr.write('nfbridge: drm_guard error: %s\n' % exc)
+        except Exception:
+            pass
+
+
 if RPC_PORT:
     _cleanup_stale(_profile, RPC_PORT)
+    _drm_guard(_profile)
 
 # Give the process its own taskbar identity so it doesn't group under python's icon
 # (then WM_SETICON's icon is what the taskbar shows).

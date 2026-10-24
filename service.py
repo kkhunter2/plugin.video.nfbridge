@@ -10,23 +10,34 @@ from resources.lib import nfclient
 
 def main():
     monitor = xbmc.Monitor()
-    kplayer = xbmc.Player()
     client = nfclient.NetflixClient(port=player.DAEMON_PORT)
     was_playing = False
+    # If a previous Kodi session died mid-playback, the saved-settings marker survives
+    # and the user is left without GUI sounds / their audio settings. Hand everything
+    # back at startup — unless the daemon is genuinely still playing across the restart.
+    if not client.health().get('playing'):
+        kodiutils.restore_audio()
     while not monitor.abortRequested():
-        try:
-            playing = bool((client._get('/health', timeout=2) or {}).get('playing'))
-        except Exception:
-            playing = False
-        # If Kodi started its OWN (local) playback while the Netflix window is still up,
-        # stop Netflix so it releases the audio device (else local playback misbehaves).
-        if playing:
+        playing = bool(client.health().get('playing'))
+        # If Kodi is playing ANY content through its own player -- a local file, YouTube, or
+        # any other streaming add-on -- fully terminate the daemon so its background WebView
+        # cannot hold or contend the audio device. That tab otherwise keeps the (HDMI /
+        # AV-receiver) audio endpoint open, which can silence the other player on some
+        # setups. The daemon relaunches automatically on the next Netflix browse once Kodi's
+        # player is idle (router/browse_client skip the launch while it is active).
+        # (Netflix's own embedded playback does NOT make Kodi's player report isPlaying,
+        # so this never fires during Netflix playback.)
+        if kodiutils.is_playing():
             try:
-                if kplayer.isPlaying():
-                    client._post('/stop', {}, timeout=5)
-                    playing = False
+                if client.running():
+                    kodiutils.restore_audio()        # hand audio settings back first
+                    try:
+                        client._get('/quit', timeout=3)
+                    except Exception:
+                        pass
             except Exception:
                 pass
+            playing = False
         if was_playing and not playing:
             kodiutils.restore_audio()        # playback stopped -> give audio back to Kodi
             # the bookmark changed during playback; drop the stale cache and re-render the
@@ -43,6 +54,13 @@ def main():
         if monitor.waitForAbort(2):
             break
     kodiutils.restore_audio()                 # restore on Kodi shutdown too
+    # Kodi is exiting -> take the daemon down with it so no orphan Netflix window/process
+    # (and its audio device hold) lingers after Kodi is gone.
+    try:
+        if client.running():
+            client._get('/quit', timeout=3)
+    except Exception:
+        pass
 
 
 if __name__ == '__main__':

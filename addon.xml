@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="plugin.video.nfbridge"
        name="Nflix"
-       version="0.2.0"
+       version="0.3.0"
        provider-name="nfbridge">
   <requires>
-    <import addon="xbmc.python" version="3.0.0"/>
-    <import addon="script.module.requests" version="2.22.0"/>
+    <!-- 3.0.1 = Kodi 20+: the InfoTagVideo setters used for list items need it -->
+    <import addon="xbmc.python" version="3.0.1"/>
   </requires>
   <extension point="xbmc.python.pluginsource" library="default.py">
     <provides>video</provides>

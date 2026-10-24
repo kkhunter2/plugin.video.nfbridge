@@ -4,12 +4,8 @@
 Keeps the rest of the addon free of Kodi boilerplate and easy to unit-test:
 everything Kodi-specific funnels through here.
 """
-try:
-    from urllib.parse import urlencode
-except ImportError:
-    from urllib import urlencode
-
 import os
+from urllib.parse import urlencode
 
 import xbmc
 import xbmcgui
@@ -39,6 +35,15 @@ def _audio_marker():
     return os.path.join(profile_dir(), 'audio_saved.json')
 
 
+def is_playing():
+    """True while Kodi's OWN player is active (local file, music, another add-on).
+    Embedded Netflix playback runs outside Kodi's player, so it never counts."""
+    try:
+        return bool(xbmc.Player().isPlaying())
+    except Exception:
+        return False
+
+
 def stop_playback():
     """Stop any video Kodi is itself playing, so the embedded Netflix player isn't
     competing with Kodi for the audio/video device (which otherwise fails -> D7361)."""
@@ -58,14 +63,19 @@ def stop_playback():
 def release_audio():
     """Prepare Kodi for embedded playback: (1) free the HDMI audio device — Kodi's
     passthrough / keep-device-alive hold it exclusively so the player can't open audio
-    and Netflix fails (D7361); (2) disable the screensaver + inhibit idle shutdown, since
-    Kodi counts external playback as idle. The user's settings are saved for restore."""
+    and Netflix fails (D7361); (2) silence GUI navigation sounds — each click opens the
+    WASAPI device exclusively, and a click landing while the player opens audio fails it
+    with D7361-1254-C00D4E85 (MF_E_AUDIO_PLAYBACK_DEVICE_IN_USE), reproduced reliably
+    when the user keeps pressing remote keys during the (slow) first load after Kodi
+    starts; (3) disable the screensaver + inhibit idle shutdown, since Kodi counts
+    external playback as idle. The user's settings are saved for restore."""
     import json
     try:
         marker = _audio_marker()
         if not os.path.exists(marker):
             saved = {}
-            for key in ('audiooutput.streamsilence', 'audiooutput.passthrough', 'screensaver.mode'):
+            for key in ('audiooutput.streamsilence', 'audiooutput.passthrough',
+                        'audiooutput.guisoundmode', 'screensaver.mode'):
                 saved[key] = (_jsonrpc('Settings.GetSettingValue',
                                        {'setting': key}).get('result') or {}).get('value')
             with open(marker, 'w') as f:
@@ -73,6 +83,7 @@ def release_audio():
             xbmc.executebuiltin('InhibitIdleShutdown(true)')   # once, balanced by restore
         _jsonrpc('Settings.SetSettingValue', {'setting': 'audiooutput.streamsilence', 'value': 0})
         _jsonrpc('Settings.SetSettingValue', {'setting': 'audiooutput.passthrough', 'value': False})
+        _jsonrpc('Settings.SetSettingValue', {'setting': 'audiooutput.guisoundmode', 'value': 0})
         _jsonrpc('Settings.SetSettingValue', {'setting': 'screensaver.mode', 'value': ''})
     except Exception as exc:  # noqa
         log('release_audio failed: {0}'.format(exc))
@@ -152,14 +163,15 @@ def add_directory(label, url, art=None, info=None, is_folder=True, playable=Fals
     if art:
         li.setArt(art)
     if info:
+        # InfoTagVideo setters are Kodi 20+ (xbmc.python 3.0.1, required in addon.xml)
         tag = li.getVideoInfoTag()
-        if info.get('title'):
-            tag.setTitle(info['title'])
-        if info.get('plot'):
-            tag.setPlot(info['plot'])
-        if info.get('mediatype'):
-            tag.setMediaType(info['mediatype'])
         try:
+            if info.get('title'):
+                tag.setTitle(info['title'])
+            if info.get('plot'):
+                tag.setPlot(info['plot'])
+            if info.get('mediatype'):
+                tag.setMediaType(info['mediatype'])
             if info.get('season') is not None:
                 tag.setSeason(int(info['season']))
             if info.get('episode') is not None:
