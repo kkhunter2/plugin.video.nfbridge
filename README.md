@@ -1,10 +1,25 @@
 # Nflix — `plugin.video.nfbridge`
 
-A Netflix Kodi addon built on the conclusion of the June‑2026 DRM investigation
-(see `../netflix-*.md`, `../ISA-1850-report.md`): **an open addon cannot decrypt
-Netflix on desktop** (VMP / Media‑Foundation‑TEE / device‑key boundaries), but a
-trusted client already plays it on every desktop OS. So this addon **delegates
+**English** | [한국어](README.ko.md)
+
+Native Kodi browsing for Netflix, with playback in a Netflix-trusted Microsoft Edge
+WebView2 window (Windows, up to 4K) using your Kodi subtitle font.
+
+It is built on the conclusion of a June‑2026 DRM investigation: **an open addon cannot
+decrypt Netflix on desktop** (VMP / Media‑Foundation‑TEE / device‑key boundaries), but
+a trusted client already plays it on every desktop OS. So this addon **delegates
 playback** and does what Kodi does well — a native browse UI.
+
+## Install
+1. Download `plugin.video.nfbridge-<version>.zip` from
+   [Releases](https://github.com/kkhunter2/plugin.video.nfbridge/releases).
+2. Kodi → Add-ons → **Install from zip file** → pick the zip. Requires **Kodi 20+**.
+3. Open the add-on and choose **Sign in to Netflix**. A Netflix window appears; sign in there once.
+
+The zip includes a self-contained player (`nfbridge_player.exe`), so no Python install
+is needed. It is an unsigned build, so Windows **Smart App Control** may block it. In
+that case, set *Settings → Embedded player → Python for the WebView2 host* to a
+`python.exe` that has `pywebview` and `fonttools` installed.
 
 ## Architecture
 
@@ -39,7 +54,7 @@ Windows** (WebView2), delegate (OS browser / app) elsewhere.
 >
 > **Runtime:** the embedded player is a self-contained `nfbridge_player.exe`
 > (`runtime/webview/`, built by `build_exe.py` — bundles Python + pywebview +
-> fonttools, ~18 MB) so no external Python is needed. Dual-purpose:
+> fonttools, ~15 MB) so no external Python is needed. Dual-purpose:
 > `nfbridge_player.exe` runs the player; `nfbridge_player.exe fontfix <src> <cache>
 > <result>` OTS-repairs a font. `player.py` prefers a configured `webview_python`
 > (a signed python.exe passes Smart App Control) + the host script, else the exe,
@@ -96,8 +111,8 @@ license, 4K).
 - [x] **Subtitle font** — Kodi `media/Fonts` font + OTS repair + user notification
 - [x] **Browse daemon** — home rows, box art, search, categories, episodes, profiles
 - [x] **Single sign-in** in the daemon window; auto profile-select at the gate
-- [x] **Profile switching** — `/switch` clicks the chosen profile off-screen and the
-      choice is persisted (`profile_index`); falls back to showing the gate
+- [x] **Profile switching** — `/switch` uses the header account menu off-screen and
+      the choice (index + guid) is persisted; falls back to showing the window
 - [x] **D7361 guard** — clears the WebView2 CDM store when the GPU driver or the
       PlayReady/MediaFoundation DLLs change
 - [ ] macOS WKWebView host; Linux remains delegate
@@ -120,9 +135,9 @@ license, 4K).
 | `tools/package.py` | builds the exe if stale and zips the addon |
 | `resources/settings.xml` | playback mode, profile index, path overrides |
 
-## Build / install
+## Build from source
 ```
 pip install pywebview fonttools brotli pyinstaller   # once, in a real Python
 python tools/package.py                               # rebuilds the exe if stale, writes ../plugin.video.nfbridge-<ver>.zip
 ```
-Install the zip in Kodi (Add-ons → Install from zip). Requires Kodi 20+.
+Install the zip as in [Install](#install). Requires Kodi 20+.
