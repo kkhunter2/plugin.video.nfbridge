@@ -22,11 +22,30 @@ def _get(setting_id):
         return None
 
 
+def _argb_split(argb):
+    """Kodi colour 'AARRGGBB' -> (css '#RRGGBB', alpha 0..1); (None, None) if unparseable."""
+    if isinstance(argb, str) and len(argb) >= 8:
+        hexv = argb[-8:]
+        try:
+            alpha = int(hexv[0:2], 16) / 255.0
+        except ValueError:
+            alpha = 1.0
+        return '#' + hexv[2:8], alpha
+    return None, None
+
+
 def _argb_to_hex(argb):
     """Kodi colour 'AARRGGBB' -> CSS '#RRGGBB' (alpha dropped)."""
-    if isinstance(argb, str) and len(argb) >= 8:
-        return '#' + argb[2:8]
-    return None
+    return _argb_split(argb)[0]
+
+
+def _get_num(setting_id, default):
+    """Read a numeric Kodi setting, falling back to Kodi's own default if absent/invalid."""
+    v = _get(setting_id)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return default
 
 
 def _font_dirs():
@@ -100,10 +119,66 @@ def resolve_font_path():
     return None
 
 
+# Map Kodi's subtitles.fontsize to a % of video height, matching Kodi's own renderer.
+# Kodi (v20+, libass; DVDSubtitlesLibass.cpp) renders the glyph at fontsize*playResY/720
+# in a playResY-tall frame, i.e. fontsize/720 of the video height. Rendering our overlay
+# at the same fraction reproduces Kodi's exact size (verified against Kodi: 42 -> ~5.83vh).
+_FONT_REF_H = 720.0
+# Kodi's border/shadow sizes are 0..100 (%); map to em of the rendered glyph so the edge
+# scales with the font at any resolution. 0.18em at 100% looks ~right vs Kodi's renderer.
+_EDGE_EM = 0.0018
+
+
 def style():
-    """CSS-ready subtitle style derived from Kodi settings."""
+    """EVERY Kodi subtitle appearance setting, resolved to one CSS-ready dict.
+
+    Reads the full set the user configured under Settings > Player > Subtitles — font
+    size, style (bold/italic), colour + opacity, border/outline, background box, drop
+    shadow, line spacing, blur and vertical position — not just the colours, so the
+    embedded player matches Kodi's subtitle look exactly. Missing settings fall back to
+    Kodi's own defaults, so this degrades gracefully across Kodi versions.
+    """
+    color, _ = _argb_split(_get('subtitles.colorpick'))
+    border, _ = _argb_split(_get('subtitles.bordercolorpick'))
+    bg, _ = _argb_split(_get('subtitles.bgcolorpick'))
+    shadow, _ = _argb_split(_get('subtitles.shadowcolor'))
+
+    fontsize = _get_num('subtitles.fontsize', 42.0)            # px @ ~1080 canvas
+    fstyle = int(_get_num('subtitles.style', 0))               # 0 N, 1 B, 2 I, 3 BI
+    text_op = _get_num('subtitles.opacity', 100.0) / 100.0
+    border_sz = _get_num('subtitles.bordersize', 25.0)         # 0..100 %
+    line_sp = _get_num('subtitles.linespacing', 12.0)          # 0..100 %
+    blur = _get_num('subtitles.blur', 0.0)                     # 0..100 %
+    bg_type = int(_get_num('subtitles.backgroundtype', 0))     # 0 none,1 shadow,2 box,3 square
+    bg_op = _get_num('subtitles.bgopacity', 80.0) / 100.0
+    shadow_op = _get_num('subtitles.shadowopacity', 100.0) / 100.0
+    shadow_sz = _get_num('subtitles.shadowsize', 15.0)         # 0..100 %
+    margin_v = _get_num('subtitles.marginvertical', 4.95)      # % of screen
+    align = int(_get_num('subtitles.align', 1))                # 1/2 bottom, 3/4 top
+
     return {
-        'color': _argb_to_hex(_get('subtitles.colorpick')) or '#FFFFFF',
-        'outlineColor': _argb_to_hex(_get('subtitles.bordercolorpick')) or '#000000',
-        'outlinePx': 2,
+        # --- text ---
+        'color': color or '#FFFFFF',
+        'opacity': round(text_op, 3),
+        'fontPct': round(fontsize / _FONT_REF_H * 100.0, 3),
+        'bold': fstyle in (1, 3),
+        'italic': fstyle in (2, 3),
+        'lineHeight': round(1.0 + line_sp / 100.0, 3),
+        'blurEm': round(blur * _EDGE_EM, 4),
+        # --- outline / border ---
+        'outlineColor': border or '#000000',
+        'outlineEm': round(border_sz * _EDGE_EM, 4),
+        # --- background box ---
+        'bgType': {1: 'shadow', 2: 'box', 3: 'square'}.get(bg_type, 'none'),
+        'bgColor': bg or '#000000',
+        'bgOpacity': round(bg_op, 3),
+        # --- drop shadow ---
+        'shadowColor': shadow or '#000000',
+        'shadowOpacity': round(shadow_op, 3),
+        'shadowEm': round(shadow_sz * _EDGE_EM, 4),
+        # --- position ---
+        'align': 'top' if align in (3, 4) else 'bottom',
+        'marginPct': round(margin_v, 3),
+        # --- back-compat with older webview_host builds (fixed px outline @ ~1080) ---
+        'outlinePx': max(1, int(round(fontsize * border_sz / 100.0 * 0.18))),
     }
