@@ -715,6 +715,28 @@ _FS = [False]
 _PREV_STYLE = [0]
 
 
+def _set_square_corners(hwnd, on):
+    """Windows 11 rounds the corners of any window that doesn't exactly cover a monitor
+    and draws a 1px light border around it. Our overscanned fullscreen window counts, so
+    the rounded border showed as small light dots in all four screen corners during
+    playback. While fullscreen: no rounding + black border (the window size is kept);
+    afterwards: system defaults. No-op before Windows 11 (the attributes don't exist)."""
+    try:
+        import ctypes
+        DWMWA_WINDOW_CORNER_PREFERENCE, DWMWA_BORDER_COLOR = 33, 34
+        DWMWCP_DEFAULT, DWMWCP_DONOTROUND = 0, 1
+        DWMWA_COLOR_DEFAULT, BLACK = 0xFFFFFFFF, 0x00000000
+        corner = ctypes.c_int(DWMWCP_DONOTROUND if on else DWMWCP_DEFAULT)
+        border = ctypes.c_uint(BLACK if on else DWMWA_COLOR_DEFAULT)
+        dwm = ctypes.windll.dwmapi
+        dwm.DwmSetWindowAttribute(ctypes.c_void_p(hwnd), DWMWA_WINDOW_CORNER_PREFERENCE,
+                                  ctypes.byref(corner), ctypes.sizeof(corner))
+        dwm.DwmSetWindowAttribute(ctypes.c_void_p(hwnd), DWMWA_BORDER_COLOR,
+                                  ctypes.byref(border), ctypes.sizeof(border))
+    except Exception:
+        pass
+
+
 def _set_fullscreen(window, on):
     """Borderless fullscreen via Win32: a WS_POPUP window covering the whole screen
     (with a few px overscan so no edge line shows). pywebview's toggle_fullscreen left
@@ -744,8 +766,10 @@ def _set_fullscreen(window, on):
             # HWND_TOP(0) not TOPMOST: cover the screen but still let Alt+Tab bring another
             # window in front. 2px overscan each side, FRAMECHANGED|SHOWWINDOW.
             u.SetWindowPos(hwnd, 0, -2, -2, sw + 4, sh + 4, 0x0020 | 0x0040)
+            _set_square_corners(hwnd, True)
             _FS[0] = True
         elif not on and _FS[0]:
+            _set_square_corners(hwnd, False)
             u.SetWindowLongW(hwnd, GWL_STYLE, _PREV_STYLE[0] or 0x00CF0000)
             u.SetWindowPos(hwnd, 0, -sw - 200, -sh - 200, sw, sh, 0x0020 | 0x0010)  # FRAMECHANGED|NOACTIVATE
             _FS[0] = False
