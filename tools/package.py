@@ -15,7 +15,7 @@ import subprocess
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ADDON_ID = 'plugin.video.nfbridge'
-EXCLUDE_DIRS = {'.git', '__pycache__', 'build', 'cache', 'httpcache', 'profile',
+EXCLUDE_DIRS = {'.git', '.omc', '__pycache__', 'build', 'cache', 'httpcache', 'profile',
                 'node_modules', 'tools'}
 EXCLUDE_EXT = {'.pyc', '.spec', '.pyo', '.log'}
 EXCLUDE_FILES = {'.gitignore'}
