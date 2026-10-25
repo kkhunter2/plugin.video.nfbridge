@@ -1,166 +1,163 @@
-# Nflix — `plugin.video.nfbridge`
+# Nflix
 
-**English** | [한국어](README.ko.md)
+English | [한국어](README.ko.md)
 
-Native Kodi browsing for Netflix, with playback in a Netflix-trusted Microsoft Edge
-WebView2 window (up to 4K) using your Kodi subtitle font. **Windows only** (desktop
-Kodi 20+ on Windows 10/11).
+A Kodi add-on for watching Netflix. You pick titles from normal Kodi lists, and playback
+opens in a full-screen Netflix window. That window runs on the Edge engine built into
+Windows (WebView2), which Netflix accepts as a regular browser, so it plays in up to 4K.
+Subtitles use the font and colours you set in Kodi.
 
-It is built on the conclusion of a June‑2026 DRM investigation: **an open addon cannot
-decrypt Netflix on desktop** (VMP / Media‑Foundation‑TEE / device‑key boundaries), but
-a trusted client already plays it on every desktop OS. So this addon **delegates
-playback** and does what Kodi does well — a native browse UI.
+Windows only.
+
+## What you need
+
+- Windows 10 or 11
+- Kodi 20 or newer, the desktop version from kodi.tv. The Microsoft Store version of
+  Kodi won't work.
+- A Netflix account. For 4K you also need what Netflix asks for (Premium plan, a 4K
+  screen and so on).
+
+You don't need to install Python or anything else. Everything ships in the zip.
 
 ## Install
+
 1. Download `plugin.video.nfbridge-<version>.zip` from
    [Releases](https://github.com/kkhunter2/plugin.video.nfbridge/releases).
-2. Kodi → Add-ons → **Install from zip file** → pick the zip. Requires **Kodi 20+**.
-3. Open the add-on and choose **Sign in to Netflix**. A Netflix window appears; sign in there once.
+2. In Kodi, go to Add-ons → Install from zip file and pick the file.
+3. Open Nflix under Video add-ons. The first time, you'll only see "Sign in to Netflix".
+   Select it and a Netflix window opens. Sign in, pick your profile, and the window goes
+   away and you're back in Kodi. You only do this once.
 
-By default Netflix starts in the background 10 s after Kodi starts and loads the home
-screen, so the add-on opens at once. It uses about 1 GB of memory while Kodi runs; turn
-it off under *Settings → General → Startup → Start Netflix with Kodi*.
+To update, install the new zip the same way. You stay signed in.
 
-The zip includes a self-contained player (`runtime/webview/dist/nfbridge_player/`), so no
-Python install is needed. It is an unsigned build, so Windows **Smart App Control** may
-block it. In that case, set *Settings → Embedded player → Python for the WebView2 host* to a
-`python.exe` that has `pywebview` and `fonttools` installed.
+If Windows 11 Smart App Control is on, it may block the player. See
+[Troubleshooting](#troubleshooting).
 
-## Architecture
+## Using it
 
-```
-ONE persistent WebView2 daemon  (runtime/webview/webview_host.py -> nfbridge_player.exe)
-   runs netflix.com off-screen, signed in once, and serves BOTH:
-   - browse : localhost RPC that proxies falcor queries through the page's own data
-              client (netflix.appContext.state.pathEvaluator) + Apollo-cache reads
-   - play   : /play navigates the same window to /watch and brings it forward
-              fullscreen (PlayReady SL3000 -> up to 4K) with the Kodi subtitle font
+The home screen shows the same rows as the Netflix home page, with Search, My List,
+Series & Movies and Profiles at the top.
 
-resources/lib/nfclient.py   browse client for that daemon (pure stdlib)
-resources/lib/routes.py     -> Kodi directories
-resources/lib/player.py     daemon lifecycle + Play (embedded) / delegate fallback
-```
+Pick a movie and it starts playing. Pick a series and you get its seasons and episodes.
+Resume points and watched marks show up in the Kodi lists too.
 
-`playback_mode` (setting) chooses embedded (default, WebView2) vs delegate (the Netflix
-Store app, opened at the title, else an Edge or Chrome app window in your own browser
-profile). Browsing always goes through the WebView2 daemon, which is why the add-on is
-Windows only: on macOS the hidden-window browsing would hit WebKit's background
-throttling, desktop Linux has no Netflix-ready embeddable engine out of the box, and
-Android / LibreELEC have no browser engine to host at all (see the 2026-10 review).
+While a title is playing:
 
-> **Embedded = Microsoft Edge WebView2 (Windows).** The system Edge engine is
-> Microsoft-signed and Netflix-trusted, so Netflix **plays in our own window, up to
-> 4K (PlayReady SL3000)** — verified (overlay ESN `NFCDIE`, 3840×2160). A bundled
-> *Electron* does NOT work (Netflix rejects it: M7121/D7353/e100 — VMP-signature
-> provenance), so embedded uses WebView2, not Electron.
->
-> **Subtitles (embedded):** we keep Netflix's own subtitle text/timing/position and
-> only **swap the font to Kodi's configured subtitle font** (`media/Fonts`, via
-> `kodi_subs.py`) + colour/outline, injected with `!important` CSS. The font is
-> first OTS-repaired by `fontfix.py` (Chromium's sanitizer rejects some fonts that
-> Kodi/FreeType load — e.g. a malformed `post` table); if a font is too corrupt to
-> repair, the user is **notified** and Netflix's own font is used.
->
-> **Runtime:** the embedded player is a self-contained PyInstaller *onedir* build,
-> `runtime/webview/dist/nfbridge_player/` (`nfbridge_player.exe` + `_internal/`, built by
-> `build_exe.py` — bundles Python + pywebview + fonttools, ~29 MB unpacked), so no
-> external Python is needed. Onedir, not onefile: a onefile exe unpacks itself to
-> `%TEMP%` on every launch (~1 s). Dual-purpose:
-> `nfbridge_player.exe` runs the player; `nfbridge_player.exe fontfix <src> <cache>
-> <result>` OTS-repairs a font. `player.py` prefers a configured `webview_python`
-> (a signed python.exe passes Smart App Control) + the host script, else the exe,
-> else delegate mode.
-
-## Browse — the WebView-fetch daemon
-The daemon reads Netflix's data *through the page's own clients* over localhost, so
-there is no header/API reverse-engineering (a raw `pathEvaluator` request returns 412
-even from inside the page). (A direct-HTTP browse layer existed up to 0.2.0 but was
-never wired in and was removed in 0.3.0: one verified path beats two drifting ones.)
-
-**Since the 2026-10 Netflix build, browse pages are GraphQL "Pinot" pages, not falcor
-LoCo.** `/browse`, `/browse/genre/<id>` and `/browse/my-list` live in the page's Apollo
-cache (`Pinot*Page → sections → PinotCarouselSection → entities → *EntityTreatment →
-Movie|Show:{videoId}`), and are paginated by the page itself. The daemon (`/pinot`)
-loads more sections by bringing the page's `browse-page+sentinel` into view and more of
-a row's tiles by clicking that carousel's right arrow, then reads the cache. Falcor
-still serves per-video data (`videos[id]` synopsis/bookmark/runtime, season episodes).
-
-`resources/lib/nfclient.py` calls the daemon:
-- `home()` / `genre()` — a page's rows (Pinot); a row's "root" is the page path
-- `row_videos()` — one row's tiles (type, title, art, bookmark/runtime when present),
-  topped up with one batched falcor call for synopsis / bookmark / runtime
-- `my_list()` — every row of `/browse/my-list`, flattened
-- `video_info()` — one title's basics (used to tell movie from show for untyped tiles)
-- `search()` — Netflix Pinot search results (Apollo)
-- `episodes()` — a show's seasons/episodes (Apollo season list + falcor episodes)
-- `profiles()` — profile list (falcor). `/switch` clicks the header account menu's
-  `switch-profile-<guid>` button (`/ProfilesGate` now redirects to `/browse`); the
-  ACTIVE profile is Apollo's `currentProfile` (`userInfo.guid` is the account owner's)
-
-Daemon endpoints (`NF_RPC_PORT`): `/health` (`ready`, `login`, `ver`, `playing`),
-`/context` (incl. `profile`, `home`), `/falcor`, `/art`, `/pinot`, `/search`,
-`/episodes`, `/home`, `/switch`, `/play`, `/show`, `/quit`, `/eval`.
-
-**Lists cache.** Lists are cached on disk (`addon_data/…/httpcache`): home / category /
-row / episode lists for 3 h, My List for 1 h. Watching a title does not drop them: the
-next visit re-reads only the resume / watched marks (one falcor call), so returning to a
-list takes well under a second. Rows are cached by title, because Netflix reorders the
-home rows on every load; Continue Watching moves the title just played to the front.
-
-**Lifecycle.** The daemon is detached and survives Kodi restarts; `nfclient.ensure()`
-restarts it when its `/health` `ver` (runtime-file mtime + subtitle font name) differs
-from what the addon would launch. `service.py` quits it whenever Kodi's own player is
-active (so the hidden tab can't hold the audio device) and on Kodi exit; the router
-relaunches it on the next browse. With *Start Netflix with Kodi* on, `service.py` also
-launches it 10 s after Kodi starts and caches home without taking focus (one launch
-guard keeps that and a user's open from starting two daemons). Its WebView2 profile
-(login cookies, DRM provisioning) and the repaired-font cache live in the addon's **data** dir
-(`addon_data/plugin.video.nfbridge/webview_profile`, `fontcache`), so an addon
-update/reinstall doesn't sign the user out.
-
-## Legitimacy
-No DRM circumvention, no key handling. Each user signs in to **their own** account;
-playback runs in a client Netflix already trusts (Edge issues a real SL3000 XMR
-license, 4K).
-
-## Status
-- [x] Addon scaffold (`addon.xml`, `default.py`, router, settings)
-- [x] **12 languages** — English, Korean, Japanese, Simplified/Traditional Chinese, German,
-      French, Spanish, Italian, Brazilian Portuguese, Russian, Polish. The non-English
-      strings are a first draft: corrections to `resources/language/*/strings.po` are welcome
-- [x] **Playback** — embedded WebView2 (4K + Kodi subtitle font + OSD) / delegate fallback
-- [x] **Self-contained runtime** (onedir `nfbridge_player`, no external Python)
-- [x] **Fast lists** — lists survive playback (marks re-read only); optional start with Kodi
-- [x] **Subtitle font** — Kodi `media/Fonts` font + OTS repair + user notification
-- [x] **Browse daemon** — home rows, box art, search, categories, episodes, profiles
-- [x] **Single sign-in** in the daemon window; auto profile-select at the gate
-- [x] **Profile switching** — `/switch` uses the header account menu off-screen and
-      the choice (index + guid) is persisted; falls back to showing the window
-- [x] **D7361 guard** — clears the WebView2 CDM store when the GPU driver or the
-      PlayReady/MediaFoundation DLLs change
-- [ ] Other OSes — not planned (reviewed 2026-10: no practical hidden-browser host)
-
-## Files
-| file | role |
+| Key | What it does |
 |---|---|
-| `default.py` | entry point |
-| `service.py` | audio-device hand-back, daemon quit on local playback / Kodi exit, start-with-Kodi prefetch |
-| `resources/lib/router.py` | URL → handler dispatch, daemon recovery |
-| `resources/lib/routes.py` | handlers → Kodi directories / play |
-| `resources/lib/nfclient.py` | browse client for the WebView-fetch daemon |
-| `resources/lib/player.py` | daemon lifecycle + playback |
-| `resources/lib/kodi_subs.py` | Kodi subtitle font/style |
-| `resources/lib/kodiutils.py` | Kodi API helpers |
-| `resources/lib/cache.py` | on-disk list cache (survives playback, marks refresh) |
-| `runtime/webview/webview_host.py` | WebView2 daemon (browse RPC + playback + OSD) |
-| `runtime/webview/fontfix.py` | OTS font repair (CLI) |
-| `runtime/webview/build_exe.py` | PyInstaller (onedir) build of the runtime |
-| `tools/package.py` | builds the runtime if stale and zips the addon |
-| `resources/settings.xml` | playback mode, profile, start with Kodi, path overrides |
+| OK (Enter) | Presses "Skip intro", "Next episode" and similar buttons when Netflix shows them. Otherwise opens the menu |
+| Arrows | Move through the menu when it's open. Otherwise they do what they do on Netflix (seek, volume) |
+| Back (Esc, Backspace) | Closes the menu if it's open. Otherwise stops playback and returns to Kodi |
 
-## Build from source
+The menu has Play/Pause, Subtitles, Next episode (series only) and Back.
+
+Subtitles follow your Kodi subtitle settings (font, size, colour, border). If you'd
+rather have Netflix's own font, leave Kodi's subtitle font on the default.
+
+## Settings
+
+| Setting | What it does |
+|---|---|
+| Playback location | "Embedded" (the default) plays in the add-on's own window. "Delegate" hands the title to the Netflix app from the Microsoft Store, or to an Edge or Chrome window if the app isn't installed. With Delegate, your Kodi subtitle style and the remote controls above don't apply |
+| Switch profile | Choose which Netflix profile to use. Same as Profiles on the home screen |
+| Start Netflix with Kodi | On by default. Netflix starts in the background 10 seconds after Kodi does, so the add-on opens straight away. It costs about 1 GB of memory while Kodi is running. Turn it off if you don't use Netflix much; the first open then takes about 10 seconds |
+
+There are a few more settings, such as custom Edge or Chrome paths, that you'll rarely
+need.
+
+## Good to know
+
+- Lists are kept for 3 hours once loaded (My List for 1 hour). That's why they open
+  instantly the second time, but a row Netflix just added can take a while to show up.
+  Resume points and watched marks update right after you watch something.
+- When you play something else in Kodi (your own files, another add-on), the Netflix
+  window is closed so the two don't fight over the audio device. It comes back by itself
+  the next time you open Netflix.
+- Switching profiles clears the saved lists and loads them again.
+
+## Troubleshooting
+
+**The first open is slow.**
+With "Start Netflix with Kodi" off, the first open takes about 10 seconds while Netflix
+starts. Turn it on and Kodi gets Netflix ready at startup.
+
+**The player doesn't start.**
+Windows 11 Smart App Control blocks unsigned programs, and the player bundled with the
+add-on is unsigned. You can have it run through a signed Python instead:
+
+1. Install Python from [python.org](https://www.python.org/).
+2. In a Command Prompt, run `py -m pip install pywebview fonttools brotli`.
+3. In the add-on settings, under Embedded player, set "Python for the WebView2 host" to
+   that `python.exe`.
+
+Turning Smart App Control off also works, but it's a Windows security feature, so try
+this first.
+
+**Playback fails with error D7361.**
+This Netflix DRM error tends to appear after a graphics driver or Windows update.
+Restart Kodi: the add-on then clears the old DRM data and Netflix sets it up again.
+
+**I want to use a different Netflix account.**
+You can't sign out from inside the add-on yet. Close Kodi, delete
+`%APPDATA%\Kodi\userdata\addon_data\plugin.video.nfbridge\webview_profile`, then start
+Kodi again and sign in with the other account.
+
+**A new Netflix row doesn't show up.**
+Lists are reloaded every 3 hours. To get them now, go to Switch profile and pick the
+profile you're already using. That clears the saved lists.
+
+## Why Windows only
+
+The add-on reads the lists from a Netflix window kept off-screen and plays in that same
+window. The only browser engine that works that way and that Netflix accepts is
+Windows' WebView2. macOS slows down hidden windows, Linux has no suitable engine out of
+the box, and Android and LibreELEC have no browser to run at all. Other systems were
+looked at in October 2026 and aren't planned.
+
+## How it works
+
+The add-on keeps the Netflix website open in a single WebView2 window placed off-screen,
+so you never see it. When Kodi needs a list, the add-on reads the Netflix data already
+in that window and turns it into Kodi items. To play, it brings the same window to the
+front in full screen.
+
+Nothing is decrypted or worked around. A browser engine Netflix trusts plays the video
+the normal way, and everyone signs in with their own account. If you try the same thing
+with another embedded browser such as Electron, Netflix refuses to play.
+
+## Development
+
+To build it yourself:
+
 ```
-pip install pywebview fonttools brotli pyinstaller   # once, in a real Python
-python tools/package.py                               # rebuilds the runtime if stale, writes ../plugin.video.nfbridge-<ver>.zip
+pip install pywebview fonttools brotli pyinstaller
+python tools/package.py
 ```
-Install the zip as in [Install](#install). Requires Kodi 20+.
+
+`tools/package.py` rebuilds the player with PyInstaller when it's older than its sources,
+then writes `plugin.video.nfbridge-<version>.zip` next to the repository folder. The
+player is built as a folder (onedir) rather than a single exe, because a onefile exe
+unpacks itself on every launch and starts about a second slower.
+
+| File | Role |
+|---|---|
+| `runtime/webview/webview_host.py` | The Netflix window (daemon): reads list data, plays, draws the playback menu |
+| `runtime/webview/fontfix.py` | Repairs the Kodi subtitle font so the browser will load it |
+| `resources/lib/nfclient.py` | Talks to the daemon |
+| `resources/lib/routes.py` | Builds the Kodi lists |
+| `resources/lib/player.py` | Starts the daemon; embedded and delegated playback |
+| `resources/lib/cache.py` | Saved lists |
+| `service.py` | Starts Netflix with Kodi, restores audio settings after playback, stops the daemon when Kodi exits |
+| `resources/language/` | Text in 12 languages |
+
+Notes:
+
+- The daemon takes HTTP requests on `127.0.0.1:8731` (`/health`, `/pinot`, `/falcor`,
+  `/search`, `/episodes`, `/play` and others).
+- Since October 2026, Netflix's browse pages are GraphQL ("Pinot") pages. The daemon
+  scrolls the page to load more rows and reads them from the page's Apollo cache.
+  Per-title details (synopsis, resume point, episodes) come from falcor.
+- Sign-in and DRM data live in `addon_data\plugin.video.nfbridge\webview_profile`, so
+  updating the add-on doesn't sign you out.
+- Translations are in `resources/language/*/strings.po`. Everything except English is a
+  first draft, so corrections are welcome.
