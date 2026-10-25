@@ -17,9 +17,13 @@ playback** and does what Kodi does well — a native browse UI.
 2. Kodi → Add-ons → **Install from zip file** → pick the zip. Requires **Kodi 20+**.
 3. Open the add-on and choose **Sign in to Netflix**. A Netflix window appears; sign in there once.
 
-The zip includes a self-contained player (`nfbridge_player.exe`), so no Python install
-is needed. It is an unsigned build, so Windows **Smart App Control** may block it. In
-that case, set *Settings → Embedded player → Python for the WebView2 host* to a
+By default Netflix starts in the background 10 s after Kodi starts and loads the home
+screen, so the add-on opens at once. It uses about 1 GB of memory while Kodi runs; turn
+it off under *Settings → General → Startup → Start Netflix with Kodi*.
+
+The zip includes a self-contained player (`runtime/webview/dist/nfbridge_player/`), so no
+Python install is needed. It is an unsigned build, so Windows **Smart App Control** may
+block it. In that case, set *Settings → Embedded player → Python for the WebView2 host* to a
 `python.exe` that has `pywebview` and `fonttools` installed.
 
 ## Architecture
@@ -37,8 +41,9 @@ resources/lib/routes.py     -> Kodi directories
 resources/lib/player.py     daemon lifecycle + Play (embedded) / delegate fallback
 ```
 
-`playback_mode` (setting) chooses embedded (default, WebView2) vs delegate (Edge /
-Chrome). Browsing always goes through the WebView2 daemon, which is why the add-on is
+`playback_mode` (setting) chooses embedded (default, WebView2) vs delegate (the Netflix
+Store app, opened at the title, else an Edge or Chrome app window in your own browser
+profile). Browsing always goes through the WebView2 daemon, which is why the add-on is
 Windows only: on macOS the hidden-window browsing would hit WebKit's background
 throttling, desktop Linux has no Netflix-ready embeddable engine out of the box, and
 Android / LibreELEC have no browser engine to host at all (see the 2026-10 review).
@@ -56,9 +61,11 @@ Android / LibreELEC have no browser engine to host at all (see the 2026-10 revie
 > Kodi/FreeType load — e.g. a malformed `post` table); if a font is too corrupt to
 > repair, the user is **notified** and Netflix's own font is used.
 >
-> **Runtime:** the embedded player is a self-contained `nfbridge_player.exe`
-> (`runtime/webview/`, built by `build_exe.py` — bundles Python + pywebview +
-> fonttools, ~15 MB) so no external Python is needed. Dual-purpose:
+> **Runtime:** the embedded player is a self-contained PyInstaller *onedir* build,
+> `runtime/webview/dist/nfbridge_player/` (`nfbridge_player.exe` + `_internal/`, built by
+> `build_exe.py` — bundles Python + pywebview + fonttools, ~29 MB unpacked), so no
+> external Python is needed. Onedir, not onefile: a onefile exe unpacks itself to
+> `%TEMP%` on every launch (~1 s). Dual-purpose:
 > `nfbridge_player.exe` runs the player; `nfbridge_player.exe fontfix <src> <cache>
 > <result>` OTS-repairs a font. `player.py` prefers a configured `webview_python`
 > (a signed python.exe passes Smart App Control) + the host script, else the exe,
@@ -94,12 +101,20 @@ Daemon endpoints (`NF_RPC_PORT`): `/health` (`ready`, `login`, `ver`, `playing`)
 `/context` (incl. `profile`, `home`), `/falcor`, `/art`, `/pinot`, `/search`,
 `/episodes`, `/home`, `/switch`, `/play`, `/show`, `/quit`, `/eval`.
 
+**Lists cache.** Lists are cached on disk (`addon_data/…/httpcache`): home / category /
+row / episode lists for 3 h, My List for 1 h. Watching a title does not drop them: the
+next visit re-reads only the resume / watched marks (one falcor call), so returning to a
+list takes well under a second. Rows are cached by title, because Netflix reorders the
+home rows on every load; Continue Watching moves the title just played to the front.
+
 **Lifecycle.** The daemon is detached and survives Kodi restarts; `nfclient.ensure()`
 restarts it when its `/health` `ver` (runtime-file mtime + subtitle font name) differs
 from what the addon would launch. `service.py` quits it whenever Kodi's own player is
 active (so the hidden tab can't hold the audio device) and on Kodi exit; the router
-relaunches it on the next browse. Its WebView2 profile (login cookies, DRM
-provisioning) and the repaired-font cache live in the addon's **data** dir
+relaunches it on the next browse. With *Start Netflix with Kodi* on, `service.py` also
+launches it 10 s after Kodi starts and caches home without taking focus (one launch
+guard keeps that and a user's open from starting two daemons). Its WebView2 profile
+(login cookies, DRM provisioning) and the repaired-font cache live in the addon's **data** dir
 (`addon_data/plugin.video.nfbridge/webview_profile`, `fontcache`), so an addon
 update/reinstall doesn't sign the user out.
 
@@ -114,7 +129,8 @@ license, 4K).
       French, Spanish, Italian, Brazilian Portuguese, Russian, Polish. The non-English
       strings are a first draft: corrections to `resources/language/*/strings.po` are welcome
 - [x] **Playback** — embedded WebView2 (4K + Kodi subtitle font + OSD) / delegate fallback
-- [x] **Self-contained runtime** (`nfbridge_player.exe`, no external Python)
+- [x] **Self-contained runtime** (onedir `nfbridge_player`, no external Python)
+- [x] **Fast lists** — lists survive playback (marks re-read only); optional start with Kodi
 - [x] **Subtitle font** — Kodi `media/Fonts` font + OTS repair + user notification
 - [x] **Browse daemon** — home rows, box art, search, categories, episodes, profiles
 - [x] **Single sign-in** in the daemon window; auto profile-select at the gate
@@ -128,23 +144,23 @@ license, 4K).
 | file | role |
 |---|---|
 | `default.py` | entry point |
-| `service.py` | audio-device hand-back, daemon quit on local playback / Kodi exit |
+| `service.py` | audio-device hand-back, daemon quit on local playback / Kodi exit, start-with-Kodi prefetch |
 | `resources/lib/router.py` | URL → handler dispatch, daemon recovery |
 | `resources/lib/routes.py` | handlers → Kodi directories / play |
 | `resources/lib/nfclient.py` | browse client for the WebView-fetch daemon |
 | `resources/lib/player.py` | daemon lifecycle + playback |
 | `resources/lib/kodi_subs.py` | Kodi subtitle font/style |
 | `resources/lib/kodiutils.py` | Kodi API helpers |
-| `resources/lib/cache.py` | on-disk list cache |
+| `resources/lib/cache.py` | on-disk list cache (survives playback, marks refresh) |
 | `runtime/webview/webview_host.py` | WebView2 daemon (browse RPC + playback + OSD) |
 | `runtime/webview/fontfix.py` | OTS font repair (CLI) |
-| `runtime/webview/build_exe.py` | PyInstaller build of the runtime exe |
-| `tools/package.py` | builds the exe if stale and zips the addon |
-| `resources/settings.xml` | playback mode, profile index, path overrides |
+| `runtime/webview/build_exe.py` | PyInstaller (onedir) build of the runtime |
+| `tools/package.py` | builds the runtime if stale and zips the addon |
+| `resources/settings.xml` | playback mode, profile, start with Kodi, path overrides |
 
 ## Build from source
 ```
 pip install pywebview fonttools brotli pyinstaller   # once, in a real Python
-python tools/package.py                               # rebuilds the exe if stale, writes ../plugin.video.nfbridge-<ver>.zip
+python tools/package.py                               # rebuilds the runtime if stale, writes ../plugin.video.nfbridge-<ver>.zip
 ```
 Install the zip as in [Install](#install). Requires Kodi 20+.

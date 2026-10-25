@@ -16,10 +16,14 @@ Netflix를 복호화할 수 없습니다**(VMP, Media Foundation TEE, 기기 키
    `plugin.video.nfbridge-<버전>.zip`을 받습니다.
 2. Kodi → 애드온 → **zip 파일에서 설치**(Install from zip file) → 받은 zip을 고릅니다.
    **Kodi 20 이상**이 필요합니다.
-3. 애드온을 열고 **넷플릭스 로그인**을 고릅니다. Netflix 창이 뜨면 거기서 한 번만 로그인하면 됩니다.
+3. 애드온을 열고 **Netflix 로그인**을 고릅니다. Netflix 창이 뜨면 거기서 한 번만 로그인하면 됩니다.
 
-zip에는 자체 실행형 플레이어(`nfbridge_player.exe`)가 들어 있어서 Python을 따로 설치할
-필요가 없습니다. 이 exe는 서명되지 않은 빌드라 Windows **스마트 앱 컨트롤**이 막을 수
+기본 설정에서는 Kodi가 켜지고 10초 뒤 Netflix가 뒤에서 시작되어 홈 화면을 미리 받아 두므로,
+애드온이 바로 열립니다. Kodi가 켜져 있는 동안 메모리를 약 1GB 쓰며, *설정 → 일반 → 시작 →
+Kodi와 함께 Netflix 시작*에서 끌 수 있습니다.
+
+zip에는 자체 실행형 플레이어(`runtime/webview/dist/nfbridge_player/`)가 들어 있어서 Python을
+따로 설치할 필요가 없습니다. 이 exe는 서명되지 않은 빌드라 Windows **스마트 앱 컨트롤**이 막을 수
 있습니다. 그럴 때는 *설정 → 임베디드 플레이어 → WebView2 호스트용 Python*에
 `pywebview`와 `fonttools`가 설치된 `python.exe` 경로를 지정하세요.
 
@@ -38,8 +42,9 @@ resources/lib/routes.py     -> Kodi 디렉터리 목록
 resources/lib/player.py     데몬 생명주기 + 재생 (임베디드) / 위임 모드 대체 경로
 ```
 
-`playback_mode` 설정으로 임베디드(기본값, WebView2)와 위임(Edge나 Chrome) 중 하나를
-고릅니다. 목록은 항상 WebView2 데몬을 거치기 때문에 이 애드온은 Windows 전용입니다.
+`playback_mode` 설정으로 임베디드(기본값, WebView2)와 위임 중 하나를 고릅니다. 위임은
+Netflix 스토어 앱을 해당 작품으로 바로 열고, 앱이 없으면 내 브라우저 프로필의 Edge나 Chrome
+앱 창으로 엽니다. 목록은 항상 WebView2 데몬을 거치기 때문에 이 애드온은 Windows 전용입니다.
 macOS는 숨긴 창으로 목록을 받으면 WebKit의 백그라운드 제한에 걸리고, 데스크톱 Linux에는
 바로 쓸 수 있는 Netflix용 내장 엔진이 없으며, Android와 LibreELEC에는 띄울 브라우저 엔진
 자체가 없습니다(2026년 10월 검토).
@@ -57,9 +62,11 @@ macOS는 숨긴 창으로 목록을 받으면 WebKit의 백그라운드 제한�
 > 때문입니다(예: 깨진 `post` 테이블). 복구할 수 없을 만큼 손상된 폰트면 사용자에게
 > **알림**을 띄우고 Netflix 기본 폰트를 씁니다.
 >
-> **런타임:** 임베디드 플레이어는 자체 실행형 `nfbridge_player.exe`입니다
-> (`runtime/webview/`, `build_exe.py`로 빌드. Python, pywebview, fonttools 포함, 약 15 MB).
-> 그래서 외부 Python이 필요 없습니다. 두 가지 용도로 쓰입니다.
+> **런타임:** 임베디드 플레이어는 PyInstaller *onedir* 빌드인
+> `runtime/webview/dist/nfbridge_player/`입니다(`nfbridge_player.exe` + `_internal/`,
+> `build_exe.py`로 빌드. Python, pywebview, fonttools 포함, 풀었을 때 약 29 MB). 그래서
+> 외부 Python이 필요 없습니다. onefile이 아닌 이유는, onefile exe는 실행할 때마다
+> `%TEMP%`에 자신을 풀어서 약 1초가 더 걸리기 때문입니다. 두 가지 용도로 쓰입니다.
 > `nfbridge_player.exe`는 플레이어를 실행하고, `nfbridge_player.exe fontfix <원본>
 > <캐시> <결과파일>`은 폰트를 OTS 복구합니다. `player.py`는 설정된 `webview_python`
 > (서명된 python.exe라 스마트 앱 컨트롤을 통과함)과 호스트 스크립트를 먼저 쓰고,
@@ -96,11 +103,19 @@ macOS는 숨긴 창으로 목록을 받으면 WebKit의 백그라운드 제한�
 `/context`(`profile`, `home` 포함), `/falcor`, `/art`, `/pinot`, `/search`,
 `/episodes`, `/home`, `/switch`, `/play`, `/show`, `/quit`, `/eval`.
 
+**목록 캐시.** 목록은 디스크(`addon_data/…/httpcache`)에 저장합니다. 홈·카테고리·행·
+에피소드 목록은 3시간, 내가 찜한 리스트는 1시간입니다. 작품을 봐도 목록을 지우지 않고,
+다음에 열 때 이어보기 위치와 시청 완료 표시만 다시 읽습니다(falcor 요청 한 번). 그래서
+시청 후 목록으로 돌아오는 데 1초도 걸리지 않습니다. Netflix가 홈 행 순서를 매번 바꾸기
+때문에 행은 제목으로 저장하고, "시청 중인 콘텐츠"는 방금 본 작품을 맨 앞으로 옮깁니다.
+
 **생명주기.** 데몬은 Kodi와 분리된 프로세스라 Kodi를 다시 시작해도 살아 있습니다.
 `nfclient.ensure()`는 데몬의 `/health` `ver`(런타임 파일 수정 시각 + 자막 폰트 이름)가
 애드온이 지금 띄울 버전과 다르면 데몬을 다시 시작합니다. `service.py`는 Kodi 자체
 플레이어가 재생 중일 때(숨은 탭이 오디오 장치를 잡지 않도록)와 Kodi가 종료될 때 데몬을
-끕니다. 다음에 탐색하면 라우터가 다시 띄웁니다. 데몬의 WebView2 프로필(로그인 쿠키,
+끕니다. 다음에 탐색하면 라우터가 다시 띄웁니다. *Kodi와 함께 Netflix 시작*이 켜져 있으면
+`service.py`가 Kodi 시작 10초 뒤에 데몬을 띄우고, 포커스를 가져가지 않고 홈을 미리 받아
+둡니다(이때 사용자가 애드온을 열어도 데몬이 두 번 뜨지 않게 막습니다). 데몬의 WebView2 프로필(로그인 쿠키,
 DRM 프로비저닝)과 복구된 폰트 캐시는 애드온의 **데이터** 폴더
 (`addon_data/plugin.video.nfbridge/webview_profile`, `fontcache`)에 있어서, 애드온을
 업데이트하거나 다시 설치해도 로그인이 풀리지 않습니다.
@@ -116,7 +131,8 @@ DRM을 우회하지 않고 키도 다루지 않습니다. 사용자마다 **자�
       이탈리아어, 브라질 포르투갈어, 러시아어, 폴란드어. 영어 외 번역은 초안이라
       `resources/language/*/strings.po` 수정 제안을 환영합니다
 - [x] **재생** — 임베디드 WebView2(4K + Kodi 자막 폰트 + OSD) / 위임 모드 대체 경로
-- [x] **자체 실행형 런타임**(`nfbridge_player.exe`, 외부 Python 불필요)
+- [x] **자체 실행형 런타임**(onedir `nfbridge_player`, 외부 Python 불필요)
+- [x] **빠른 목록** — 재생 후에도 목록 유지(표시만 다시 읽음), Kodi와 함께 시작(선택)
 - [x] **자막 폰트** — Kodi `media/Fonts` 폰트 + OTS 복구 + 사용자 알림
 - [x] **탐색 데몬** — 홈 행, 포스터, 검색, 카테고리, 에피소드, 프로필
 - [x] **한 번 로그인** — 데몬 창에서 로그인, 프로필 선택 화면에서 자동 선택
@@ -130,23 +146,23 @@ DRM을 우회하지 않고 키도 다루지 않습니다. 사용자마다 **자�
 | 파일 | 역할 |
 |---|---|
 | `default.py` | 진입점 |
-| `service.py` | 오디오 장치 반환, 로컬 재생 시와 Kodi 종료 시 데몬 종료 |
+| `service.py` | 오디오 장치 반환, 로컬 재생 시와 Kodi 종료 시 데몬 종료, Kodi 시작 시 미리 받기 |
 | `resources/lib/router.py` | URL → 핸들러 연결, 데몬 복구 |
 | `resources/lib/routes.py` | 핸들러 → Kodi 디렉터리 목록 / 재생 |
 | `resources/lib/nfclient.py` | WebView 데이터 데몬용 탐색 클라이언트 |
 | `resources/lib/player.py` | 데몬 생명주기 + 재생 |
 | `resources/lib/kodi_subs.py` | Kodi 자막 폰트와 스타일 |
 | `resources/lib/kodiutils.py` | Kodi API 도우미 |
-| `resources/lib/cache.py` | 목록 디스크 캐시 |
+| `resources/lib/cache.py` | 목록 디스크 캐시(재생 후에도 유지, 표시만 갱신) |
 | `runtime/webview/webview_host.py` | WebView2 데몬(탐색 RPC + 재생 + OSD) |
 | `runtime/webview/fontfix.py` | OTS 폰트 복구(CLI) |
-| `runtime/webview/build_exe.py` | 런타임 exe의 PyInstaller 빌드 |
-| `tools/package.py` | exe가 오래됐으면 다시 빌드하고 애드온을 zip으로 묶음 |
-| `resources/settings.xml` | 재생 방식, 프로필 번호, 경로 직접 지정 |
+| `runtime/webview/build_exe.py` | 런타임의 PyInstaller(onedir) 빌드 |
+| `tools/package.py` | 런타임이 오래됐으면 다시 빌드하고 애드온을 zip으로 묶음 |
+| `resources/settings.xml` | 재생 방식, 프로필, Kodi와 함께 시작, 경로 직접 지정 |
 
 ## 직접 빌드
 ```
 pip install pywebview fonttools brotli pyinstaller   # 처음 한 번, 일반 Python에서
-python tools/package.py                               # exe가 오래됐으면 다시 빌드하고 ../plugin.video.nfbridge-<버전>.zip 생성
+python tools/package.py                               # 런타임이 오래됐으면 다시 빌드하고 ../plugin.video.nfbridge-<버전>.zip 생성
 ```
 만든 zip은 위의 [설치](#설치) 순서대로 Kodi에 설치합니다. Kodi 20 이상이 필요합니다.
