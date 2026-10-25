@@ -10,7 +10,7 @@ the OS / Netflix already trust:
         (/play brings it forward, fullscreen; PlayReady SL3000 -> up to 4K) with the
         Kodi subtitle font/style injected. Single sign-in, single user-data dir.
   mode "delegate"  -> the platform's best Netflix client
-        Windows : Edge --kiosk (PlayReady SL3000, up to 4K)
+        Windows : the Store Netflix app, else an Edge app window (PlayReady SL3000, up to 4K)
         macOS   : Safari / Chrome fullscreen   (FairPlay, ~1080p)
         Linux   : Chrome --app fullscreen      (Widevine L3, 720p)
 
@@ -19,6 +19,7 @@ nfclient connects to the daemon over localhost; this module owns launching it.
 import os
 import sys
 import json
+import time
 import subprocess
 
 from resources.lib import kodiutils
@@ -65,14 +66,12 @@ def _launch_delegate(video_id):
         # 1) the official Netflix Store app (PlayReady SL3000 -> 4K/HDR), if installed
         if kodiutils.setting('use_uwp_app', 'true') == 'true' and _windows_launch_netflix_app(video_id):
             return
-        # 2) Edge in kiosk fullscreen (PlayReady SL3000 -> 4K)
-        edge = _first_existing([
-            kodiutils.setting('edge_path'),
-            r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
-            r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
-        ])
+        # 2) Edge as an app window in the user's own profile, so it is signed in (a
+        # --kiosk window is InPrivate: it always landed on the Netflix sign-in page).
+        # Fullscreen only takes when Edge isn't running yet; else press F in the player.
+        edge = _edge_exe()
         if edge:
-            return _spawn([edge, '--kiosk', url, '--edge-kiosk-type=fullscreen',
+            return _spawn([edge, '--app=' + url, '--start-fullscreen',
                            '--no-first-run', '--no-default-browser-check'])
         # 3) Chrome fallback
         chrome = _first_existing([
@@ -82,7 +81,7 @@ def _launch_delegate(video_id):
         ])
         if chrome:
             return _spawn([chrome, '--app=' + url, '--start-fullscreen', '--no-first-run'])
-        kodiutils.notify('No Edge/Chrome/Netflix app found for playback')
+        kodiutils.notify(kodiutils.localize(30030, 'No Netflix app, Edge or Chrome found for playback'))
 
     elif plat == 'macos':
         browser = kodiutils.setting('macos_browser', 'Safari')  # or "Google Chrome"
@@ -96,18 +95,64 @@ def _launch_delegate(video_id):
         ])
         if chrome:
             return _spawn([chrome, '--app=' + url, '--start-fullscreen', '--no-first-run'])
-        kodiutils.notify('No Chrome/Chromium found for playback')
+        kodiutils.notify(kodiutils.localize(30030, 'No Netflix app, Edge or Chrome found for playback'))
+
+
+def _edge_exe():
+    return _first_existing([
+        kodiutils.setting('edge_path'),
+        r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+        r'C:\Program Files\Microsoft\Edge\Application\msedge.exe',
+    ])
+
+
+_NETFLIX_PKG = '4DF9E0F8.Netflix_'     # the Microsoft Store Netflix app's package
+_PACKAGES = r'Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages'
+
+
+def _netflix_app_id():
+    """The Edge web-app id the Store Netflix app runs, or None if that app isn't installed.
+    Today's Store app is no native app: its manifest has Edge host Netflix's web app
+    (HostId="PWA", --app-id=<id>), so the id is read from there."""
+    import re
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _PACKAGES) as key:
+            i = 0
+            while True:
+                try:
+                    name = winreg.EnumKey(key, i)
+                except OSError:
+                    return None
+                i += 1
+                if not name.startswith(_NETFLIX_PKG):
+                    continue
+                with winreg.OpenKey(key, name) as pkg:
+                    root = winreg.QueryValueEx(pkg, 'PackageRootFolder')[0]
+                with open(os.path.join(root, 'AppxManifest.xml'), encoding='utf-8') as fh:
+                    m = re.search(r'--app-id=([a-p]{32})', fh.read())
+                if m:
+                    return m.group(1)
+    except Exception as exc:  # noqa
+        kodiutils.log('Netflix app lookup failed: {0}'.format(exc))
+    return None
 
 
 def _windows_launch_netflix_app(video_id):
-    """Launch the Netflix Store (UWP) app at a title, if installed. Returns True on success."""
+    """Open the title in the Microsoft Store Netflix app, if installed. That app ignores a
+    URL passed on activation (it always opens its start page); Edge's
+    --app-launch-url-for-shortcuts-menu-item opens the web app AT a page instead.
+    Returns True if launched; False lets the caller fall back to Edge."""
+    app_id = _netflix_app_id()
+    edge = _edge_exe()
+    if not app_id or not edge:
+        return False
     try:
-        # The Netflix UWP app handles netflix.com/watch deep links; ask the shell to open it
-        # with the app association. (A production build would resolve the exact AppUserModelId.)
-        subprocess.Popen(['explorer.exe', WATCH_URL.format(video_id)])
-        return False  # explorer opens the default handler; treat as "not guaranteed app" -> let Edge handle
+        _spawn([edge, '--app-id=' + app_id,
+                '--app-launch-url-for-shortcuts-menu-item=' + WATCH_URL.format(video_id)])
+        return True
     except Exception as exc:  # noqa
-        kodiutils.log('uwp launch failed: {0}'.format(exc))
+        kodiutils.log('Netflix app launch failed: {0}'.format(exc))
         return False
 
 
@@ -127,7 +172,9 @@ def _host_script():
 
 
 def _host_exe():
-    return os.path.join(_runtime_dir(), 'webview', 'dist', 'nfbridge_player.exe')
+    # a PyInstaller onedir build: it starts in ~0.2 s, where a onefile exe unpacks
+    # itself to %TEMP% first (~1 s on every launch)
+    return os.path.join(_runtime_dir(), 'webview', 'dist', 'nfbridge_player', 'nfbridge_player.exe')
 
 
 def _webview_cmd():
@@ -197,13 +244,13 @@ def switch_profile(index, guid=''):
     kodiutils.set_setting('profile_guid', guid or '')
     c = nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon, code_ver=_code_ver())
     if not c.ensure():
-        kodiutils.notify('Netflix not ready')
+        kodiutils.notify(kodiutils.localize(30031, 'Netflix is not ready'))
         return
     try:
         res = c._post('/switch', {'index': index, 'guid': guid or ''}, timeout=40) or {}
     except Exception as exc:  # noqa
         kodiutils.log('switch profile failed: {0}'.format(exc))
-        kodiutils.notify('Profile switch failed')
+        kodiutils.notify(kodiutils.localize(30032, 'Profile switch failed'))
         return
     if res.get('ok'):
         kodiutils.notify(kodiutils.localize(30011, 'Profile switched'))
@@ -213,7 +260,7 @@ def switch_profile(index, guid=''):
         if 'plugin.video.nfbridge' in (xbmc.getInfoLabel('Container.FolderPath') or ''):
             xbmc.executebuiltin('Container.Update({0},replace)'.format(kodiutils.url_for(action='root')))
     else:
-        kodiutils.notify('Pick a profile in the Netflix window, then reopen Browse')
+        kodiutils.notify(kodiutils.localize(30033, 'Pick a profile in the Netflix window, then open the add-on again'))
 
 
 def _ensure_daemon():
@@ -222,7 +269,93 @@ def _ensure_daemon():
     if not cmd:
         kodiutils.log('webview runtime not available (build runtime/webview or set webview_python)')
         return
-    _spawn(cmd, env=_daemon_env(cmd))
+    # The Kodi-start prefetch and the user opening the add-on can both find the daemon
+    # down: launch only once. A second one would take the first one's still-starting
+    # WebView2 for orphans and kill it (and two first font repairs would clobber each
+    # other's result file). The others wait for that launch's port (nfclient.ensure).
+    stamp = _launch_stamp()
+    if not _claim_launch(stamp):
+        kodiutils.log('player: daemon launch already under way')
+        return
+    env = _daemon_env(cmd)
+    import xbmc
+    if xbmc.Monitor().abortRequested():
+        # Kodi is exiting (the env can take a while): a daemon started now would outlive
+        # the service that quits it
+        _remove(stamp)
+        return
+    _SPAWNED[0] = _spawn(cmd, env=env)
+    _write(stamp, 'spawned')
+
+
+_SPAWNED = [None]   # the daemon process this (Python) process launched, if any
+
+
+def stop_spawned():
+    """Kill the daemon this process launched if it is still starting (its port not open
+    yet, so it can't be told to /quit). For the service on Kodi exit: a daemon the
+    prefetch launched a moment ago must not outlive Kodi."""
+    proc = _SPAWNED[0]
+    if proc is not None and proc.poll() is None:
+        kodiutils.log('player: stopping the daemon still starting')
+        proc.terminate()
+
+
+# daemon.launch: 'env' while a launch builds its env (a first font repair runs up to
+# 120 s), then 'spawned' until its port opens (a few seconds); its age is the mtime's
+_ENV_GRACE = 130
+_LAUNCH_GRACE = 15
+
+
+def _launch_stamp():
+    return os.path.join(kodiutils.profile_dir(), 'daemon.launch')
+
+
+def launch_pending():
+    """A daemon launch is under way: its env is being built, or it was spawned moments ago."""
+    path = _launch_stamp()
+    try:
+        with open(path) as fh:
+            state = fh.read().strip()
+        age = time.time() - os.path.getmtime(path)
+    except (OSError, ValueError):
+        return False
+    # a future mtime (the clock was stepped back) is no launch under way
+    return 0 <= age < (_ENV_GRACE if state == 'env' else _LAUNCH_GRACE)
+
+
+def _claim_launch(stamp):
+    """True if this caller may launch the daemon (no other launch under way). The stamp is
+    created exclusively, so two callers can't both claim a fresh one."""
+    for _ in range(2):
+        try:
+            fd = os.open(stamp, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            if launch_pending():
+                return False
+            _remove(stamp)                  # an earlier launch's stamp
+            continue
+        except OSError:
+            return True                     # no stamp possible: launch anyway
+        with os.fdopen(fd, 'w') as fh:
+            fh.write('env')
+        return True
+    return False
+
+
+def _write(path, text):
+    try:
+        with open(path, 'w') as fh:
+            fh.write(text)
+    except OSError:
+        pass
+
+
+def _remove(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
 
 
 def _code_ver():
@@ -255,7 +388,7 @@ def browse_client():
 def launch_signin(*_args):
     """Bring up the daemon's window on the Netflix sign-in page."""
     if not _webview_cmd():
-        kodiutils.notify('Set "webview_python" in settings (or use the bundled exe)')
+        kodiutils.notify(kodiutils.localize(30034, 'Netflix runtime not found - reinstall the add-on'))
         return
     from resources.lib import nfclient
     c = nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon)
@@ -268,10 +401,25 @@ def launch_signin(*_args):
             time.sleep(1)
     try:
         c._get('/show', timeout=10)
-        kodiutils.notify('Sign in to Netflix in the window, then return to Kodi')
+        kodiutils.notify(kodiutils.localize(30035, 'Sign in to Netflix in the window, then return to Kodi'))
     except Exception as exc:  # noqa
-        kodiutils.notify('Could not open the sign-in window')
+        kodiutils.notify(kodiutils.localize(30036, 'Could not open the sign-in window'))
         kodiutils.log('signin /show failed: {0}'.format(exc))
+
+
+def _woff2_target(font, cache):
+    """Where fontfix keeps (or will keep) the WOFF2 built from font; None if unknown. Asks
+    fontfix.py itself (pure stdlib) so the cache key has one definition."""
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            'nfbridge_fontfix', os.path.join(_runtime_dir(), 'webview', 'fontfix.py'))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.woff2_path(font, cache)
+    except Exception as exc:  # noqa
+        kodiutils.log('fontfix cache check failed: {0}'.format(exc))
+        return None
 
 
 def _apply_kodi_subtitle_font(cmd, env):
@@ -292,6 +440,18 @@ def _apply_kodi_subtitle_font(cmd, env):
     cache = _font_cache_dir()
     if not os.path.isdir(cache):
         os.makedirs(cache)
+    # already repaired (the usual case): skip the fontfix run, which starts the whole exe
+    # (1-3 s) and would delay every daemon launch
+    target = _woff2_target(font, cache)
+    if target and os.path.isfile(target) and os.path.getsize(target):
+        env['NF_FONT_WOFF2'] = target
+        kodiutils.log('subtitle font ready (cached): {0}'.format(os.path.basename(font)))
+        return
+    if target and os.path.exists(target + '.bad'):
+        # this very font file was rejected before and the user was told then: don't repeat
+        # the repair (and the notice) on every launch, e.g. the prefetch at each Kodi start
+        kodiutils.log('subtitle font {0} is unusable (known) - using Netflix font'.format(font))
+        return
     result_file = os.path.join(cache, 'fontfix_result.txt')
     try:
         os.remove(result_file)
@@ -309,18 +469,20 @@ def _apply_kodi_subtitle_font(cmd, env):
             env['NF_FONT_WOFF2'] = out
             kodiutils.log('subtitle font ready: {0}'.format(os.path.basename(font)))
         else:
-            kodiutils.notify('Subtitle font "{0}" is corrupt/unsupported - using Netflix font'
-                             .format(os.path.basename(font)))
+            if target:
+                _write(target + '.bad', out or 'rc=%s' % res.returncode)
+            kodiutils.notify(kodiutils.localize(
+                30037, 'Subtitle font "{0}" is unusable - using the Netflix font').format(os.path.basename(font)))
             kodiutils.log('fontfix failed for {0}: {1}'.format(font, out or 'rc=%s' % res.returncode))
     except Exception as exc:  # noqa
-        kodiutils.notify('Could not process subtitle font - using Netflix font')
+        kodiutils.notify(kodiutils.localize(30038, 'Could not process the subtitle font - using the Netflix font'))
         kodiutils.log('fontfix exception: {0}'.format(exc))
 
 
 # ------------------------------------------------------------------- entry ----
 def play(video_id):
     if not video_id:
-        kodiutils.notify('No video id')
+        kodiutils.notify(kodiutils.localize(30039, 'No video selected'))
         return
     mode = kodiutils.setting('playback_mode', _default_mode())
     kodiutils.log('play {0} (mode={1}, platform={2})'.format(video_id, mode, _platform()))
@@ -347,7 +509,7 @@ def _play_embedded(video_id):
     from resources.lib import nfclient
     c = nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon, code_ver=_code_ver())
     if not c.ensure():
-        kodiutils.notify('Netflix not signed in - use "Sign in" first')
+        kodiutils.notify(kodiutils.localize(30040, 'Not signed in to Netflix - use "Sign in to Netflix" first'))
         return
     try:
         c._post('/play', {'videoId': video_id})

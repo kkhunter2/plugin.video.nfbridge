@@ -9,6 +9,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Language: ko_KR\n"
 
+# ---- Browse ----
 msgctxt "#30001"
 msgid "Search"
 msgstr "검색"
@@ -31,7 +32,7 @@ msgstr "로그아웃"
 
 msgctxt "#30006"
 msgid "Sign in to Netflix"
-msgstr "넷플릭스 로그인"
+msgstr "Netflix 로그인"
 
 msgctxt "#30007"
 msgid "Series"
@@ -78,6 +79,99 @@ msgctxt "#30024"
 msgid "Back"
 msgstr "뒤로"
 
+# ---- Messages ----
+msgctxt "#30030"
+msgid "No Netflix app, Edge or Chrome found for playback"
+msgstr "재생할 Netflix 앱, Edge, Chrome을 찾지 못했습니다"
+
+msgctxt "#30031"
+msgid "Netflix is not ready"
+msgstr "Netflix가 아직 준비되지 않았습니다"
+
+msgctxt "#30032"
+msgid "Profile switch failed"
+msgstr "프로필을 전환하지 못했습니다"
+
+msgctxt "#30033"
+msgid "Pick a profile in the Netflix window, then open the add-on again"
+msgstr "Netflix 창에서 프로필을 고른 뒤 애드온을 다시 여세요"
+
+msgctxt "#30034"
+msgid "Netflix runtime not found - reinstall the add-on"
+msgstr "Netflix 실행 파일이 없습니다. 애드온을 다시 설치하세요"
+
+msgctxt "#30035"
+msgid "Sign in to Netflix in the window, then return to Kodi"
+msgstr "창에서 Netflix에 로그인한 뒤 Kodi로 돌아오세요"
+
+msgctxt "#30036"
+msgid "Could not open the sign-in window"
+msgstr "로그인 창을 열지 못했습니다"
+
+msgctxt "#30037"
+msgid "Subtitle font \"{0}\" is unusable - using the Netflix font"
+msgstr "자막 폰트 \"{0}\"을(를) 쓸 수 없어 Netflix 폰트를 사용합니다"
+
+msgctxt "#30038"
+msgid "Could not process the subtitle font - using the Netflix font"
+msgstr "자막 폰트를 처리하지 못해 Netflix 폰트를 사용합니다"
+
+msgctxt "#30039"
+msgid "No video selected"
+msgstr "선택한 영상이 없습니다"
+
+msgctxt "#30040"
+msgid "Not signed in to Netflix - use \"Sign in to Netflix\" first"
+msgstr "Netflix에 로그인하지 않았습니다. 먼저 \"Netflix 로그인\"을 실행하세요"
+
+msgctxt "#30041"
+msgid "Could not load home: {0}"
+msgstr "홈을 불러오지 못했습니다: {0}"
+
+msgctxt "#30042"
+msgid "This row is no longer on Netflix"
+msgstr "이 행은 이제 Netflix에 없습니다"
+
+msgctxt "#30043"
+msgid "Could not load row: {0}"
+msgstr "행을 불러오지 못했습니다: {0}"
+
+msgctxt "#30044"
+msgid "No profiles found"
+msgstr "프로필을 찾지 못했습니다"
+
+msgctxt "#30045"
+msgid "Could not load category: {0}"
+msgstr "카테고리를 불러오지 못했습니다: {0}"
+
+msgctxt "#30046"
+msgid "To sign out, use the account menu in the Netflix window"
+msgstr "로그아웃은 Netflix 창의 계정 메뉴에서 하세요"
+
+msgctxt "#30047"
+msgid "Could not load My List: {0}"
+msgstr "내가 찜한 리스트를 불러오지 못했습니다: {0}"
+
+msgctxt "#30048"
+msgid "Search failed: {0}"
+msgstr "검색하지 못했습니다: {0}"
+
+msgctxt "#30049"
+msgid "Could not load episodes: {0}"
+msgstr "에피소드를 불러오지 못했습니다: {0}"
+
+msgctxt "#30050"
+msgid "Could not load episodes - try again"
+msgstr "에피소드를 불러오지 못했습니다. 다시 시도하세요"
+
+msgctxt "#30051"
+msgid "Season {0}"
+msgstr "시즌 {0}"
+
+msgctxt "#30052"
+msgid "Search Netflix"
+msgstr "Netflix 검색"
+
 # ---- Settings: categories ----
 msgctxt "#30100"
 msgid "General"
@@ -88,8 +182,8 @@ msgid "Choose how titles play and which Netflix profile to use."
 msgstr "재생 방식과 Netflix 프로필을 설정합니다."
 
 msgctxt "#30102"
-msgid "Embedded player (Windows)"
-msgstr "임베디드 플레이어 (Windows)"
+msgid "Embedded player"
+msgstr "임베디드 플레이어"
 
 msgctxt "#30103"
 msgid "Settings for the built-in WebView2 player window. Used when 'Playback location' is 'Embedded'."
@@ -117,12 +211,12 @@ msgid "WebView2 host"
 msgstr "WebView2 호스트"
 
 msgctxt "#30113"
-msgid "Windows"
-msgstr "Windows"
+msgid "Netflix app / browser"
+msgstr "Netflix 앱·브라우저"
 
-msgctxt "#30114"
-msgid "Other platforms"
-msgstr "기타 플랫폼"
+msgctxt "#30115"
+msgid "Startup"
+msgstr "시작"
 
 # ---- Settings: playback ----
 msgctxt "#30120"
@@ -130,12 +224,12 @@ msgid "Playback location"
 msgstr "재생 위치"
 
 msgctxt "#30121"
-msgid "Where titles play. Embedded: in the add-on's own window (Windows, up to 4K, Kodi subtitle font). Delegate: hand off to the OS Netflix client (Windows = Edge/app, macOS = Safari, Linux = Chrome)."
-msgstr "영상을 어디서 재생할지 선택합니다. 임베디드: 애드온 내장 창에서 재생(Windows, 최대 4K, Kodi 자막 폰트 적용). 위임: OS의 Netflix 클라이언트로 넘깁니다(Windows=Edge/앱, macOS=Safari, Linux=Chrome)."
+msgid "Where titles play. Embedded: in the add-on's own window (up to 4K, with the Kodi subtitle font). Delegate: hand off to the Netflix app or the Edge/Chrome browser."
+msgstr "영상을 어디서 재생할지 고릅니다. 임베디드: 애드온의 내장 창에서 재생합니다(최대 4K, Kodi 자막 폰트 적용). 위임: Netflix 앱이나 Edge·Chrome 브라우저로 넘깁니다."
 
 msgctxt "#30122"
-msgid "Embedded - built-in window (Windows, up to 4K)"
-msgstr "임베디드 — 내장 창 (Windows · 최대 4K)"
+msgid "Embedded - built-in window (up to 4K)"
+msgstr "임베디드 — 내장 창 (최대 4K)"
 
 msgctxt "#30123"
 msgid "Delegate - play in browser/app"
@@ -147,8 +241,8 @@ msgid "Switch profile..."
 msgstr "프로필 전환…"
 
 msgctxt "#30125"
-msgid "Choose a Netflix profile. After you pick one, the player window shows the 'Who's watching?' screen to complete the switch."
-msgstr "Netflix 프로필을 선택합니다. 목록에서 고르면 재생 창에 ‘누가 시청하나요?’ 화면이 떠서 전환됩니다."
+msgid "Choose the Netflix profile to browse and play with."
+msgstr "탐색하고 재생할 Netflix 프로필을 고릅니다."
 
 msgctxt "#30126"
 msgid "Profile to auto-select on start"
@@ -168,8 +262,8 @@ msgid "Python for the WebView2 host (optional)"
 msgstr "WebView2 호스트용 Python (선택)"
 
 msgctxt "#30131"
-msgid "Path to a python.exe that has pywebview and fonttools installed; used to run the built-in Netflix window. Leave empty if you use the bundled exe."
-msgstr "pywebview와 fonttools가 설치된 python.exe 경로입니다. 내장 Netflix 창을 띄우는 데 사용합니다. 번들 exe를 사용한다면 비워 두세요."
+msgid "Path to a python.exe that has pywebview and fonttools installed; used to run the built-in Netflix window. Leave empty to use the bundled player."
+msgstr "pywebview와 fonttools가 설치된 python.exe 경로입니다. 내장 Netflix 창을 띄우는 데 사용합니다. 비워 두면 함께 들어 있는 플레이어를 사용합니다."
 
 msgctxt "#30132"
 msgid "Select python.exe"
@@ -197,21 +291,22 @@ msgid "Select msedge.exe"
 msgstr "msedge.exe 선택"
 
 msgctxt "#30145"
-msgid "Chrome/Chromium executable (override)"
-msgstr "Chrome/Chromium 실행 파일 직접 지정 (선택)"
+msgid "Chrome executable (override)"
+msgstr "Chrome 실행 파일 직접 지정 (선택)"
 
 msgctxt "#30146"
-msgid "Set the path to the chrome executable manually (e.g. on Linux) if auto-detection fails."
-msgstr "Linux 등에서 자동으로 찾지 못할 때 chrome 실행 파일 경로를 직접 지정합니다."
+msgid "Set the path to chrome.exe manually, only if auto-detection fails. Used when Edge is not found."
+msgstr "자동으로 찾지 못할 때만 chrome.exe 경로를 직접 지정합니다. Edge가 없을 때 사용합니다."
 
 msgctxt "#30147"
-msgid "Select chrome"
-msgstr "chrome 선택"
+msgid "Select chrome.exe"
+msgstr "chrome.exe 선택"
 
-msgctxt "#30148"
-msgid "macOS browser app name"
-msgstr "macOS 브라우저 앱 이름"
+# ---- Settings: startup ----
+msgctxt "#30150"
+msgid "Start Netflix with Kodi"
+msgstr "Kodi와 함께 Netflix 시작"
 
-msgctxt "#30149"
-msgid "Name of the browser app used to open Netflix on macOS (e.g. Safari, Google Chrome)."
-msgstr "macOS에서 Netflix를 열 브라우저 앱 이름입니다(예: Safari, Google Chrome)."
+msgctxt "#30151"
+msgid "Start the Netflix browser in the background when Kodi starts and load the home screen, so the add-on opens at once. Uses about 1 GB of memory while Kodi runs."
+msgstr "Kodi가 시작될 때 Netflix 브라우저를 뒤에서 띄우고 홈 화면을 미리 받아 두어, 애드온이 바로 열리게 합니다. Kodi가 켜져 있는 동안 메모리를 약 1GB 사용합니다."

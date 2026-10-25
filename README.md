@@ -3,7 +3,8 @@
 **English** | [한국어](README.ko.md)
 
 Native Kodi browsing for Netflix, with playback in a Netflix-trusted Microsoft Edge
-WebView2 window (Windows, up to 4K) using your Kodi subtitle font.
+WebView2 window (up to 4K) using your Kodi subtitle font. **Windows only** (desktop
+Kodi 20+ on Windows 10/11).
 
 It is built on the conclusion of a June‑2026 DRM investigation: **an open addon cannot
 decrypt Netflix on desktop** (VMP / Media‑Foundation‑TEE / device‑key boundaries), but
@@ -36,8 +37,11 @@ resources/lib/routes.py     -> Kodi directories
 resources/lib/player.py     daemon lifecycle + Play (embedded) / delegate fallback
 ```
 
-`playback_mode` (setting) chooses embedded vs delegate; default is **embedded on
-Windows** (WebView2), delegate (OS browser / app) elsewhere.
+`playback_mode` (setting) chooses embedded (default, WebView2) vs delegate (Edge /
+Chrome). Browsing always goes through the WebView2 daemon, which is why the add-on is
+Windows only: on macOS the hidden-window browsing would hit WebKit's background
+throttling, desktop Linux has no Netflix-ready embeddable engine out of the box, and
+Android / LibreELEC have no browser engine to host at all (see the 2026-10 review).
 
 > **Embedded = Microsoft Edge WebView2 (Windows).** The system Edge engine is
 > Microsoft-signed and Netflix-trusted, so Netflix **plays in our own window, up to
@@ -105,7 +109,10 @@ playback runs in a client Netflix already trusts (Edge issues a real SL3000 XMR
 license, 4K).
 
 ## Status
-- [x] Addon scaffold (`addon.xml`, `default.py`, router, settings, en_GB / ko_KR)
+- [x] Addon scaffold (`addon.xml`, `default.py`, router, settings)
+- [x] **12 languages** — English, Korean, Japanese, Simplified/Traditional Chinese, German,
+      French, Spanish, Italian, Brazilian Portuguese, Russian, Polish. The non-English
+      strings are a first draft: corrections to `resources/language/*/strings.po` are welcome
 - [x] **Playback** — embedded WebView2 (4K + Kodi subtitle font + OSD) / delegate fallback
 - [x] **Self-contained runtime** (`nfbridge_player.exe`, no external Python)
 - [x] **Subtitle font** — Kodi `media/Fonts` font + OTS repair + user notification
@@ -115,7 +122,7 @@ license, 4K).
       the choice (index + guid) is persisted; falls back to showing the window
 - [x] **D7361 guard** — clears the WebView2 CDM store when the GPU driver or the
       PlayReady/MediaFoundation DLLs change
-- [ ] macOS WKWebView host; Linux remains delegate
+- [ ] Other OSes — not planned (reviewed 2026-10: no practical hidden-browser host)
 
 ## Files
 | file | role |

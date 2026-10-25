@@ -10,16 +10,22 @@ import os
 import hashlib
 
 
+def woff2_path(src_path, cache_dir):
+    """Where to_web_woff2 caches src_path's WOFF2 (keyed by path, size and mtime).
+    Pure stdlib: the addon (Kodi's Python) checks it to skip the fontfix run."""
+    st = os.stat(src_path)
+    key = hashlib.md5(('%s|%d|%d' % (src_path, st.st_size, int(st.st_mtime))).encode()).hexdigest()[:16]
+    return os.path.join(cache_dir, 'sub_' + key + '.woff2')
+
+
 def to_web_woff2(src_path, cache_dir):
     """Return path to an OTS-valid WOFF2 built from src_path (cached)."""
+    out = woff2_path(src_path, cache_dir)
+    if os.path.exists(out):
+        return out
     from fontTools.ttLib import TTFont
     from fontTools.subset import Subsetter, Options
 
-    st = os.stat(src_path)
-    key = hashlib.md5(('%s|%d|%d' % (src_path, st.st_size, int(st.st_mtime))).encode()).hexdigest()[:16]
-    out = os.path.join(cache_dir, 'sub_' + key + '.woff2')
-    if os.path.exists(out):
-        return out
     if not os.path.isdir(cache_dir):
         os.makedirs(cache_dir)
 
@@ -41,7 +47,10 @@ def to_web_woff2(src_path, cache_dir):
     ss.populate(unicodes=unicodes)
     ss.subset(font)
     font.flavor = 'woff2'
-    font.save(out)
+    # write + rename: the add-on takes an existing file for a finished repair
+    tmp = '%s.%d.tmp' % (out, os.getpid())
+    font.save(tmp)
+    os.replace(tmp, out)
     return out
 
 

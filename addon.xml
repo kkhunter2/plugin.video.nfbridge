@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="plugin.video.nfbridge"
        name="Nflix"
-       version="0.3.1"
+       version="0.3.2"
        provider-name="nfbridge">
   <requires>
     <!-- 3.0.1 = Kodi 20+: the InfoTagVideo setters used for list items need it -->
@@ -13,8 +13,30 @@
   <extension point="xbmc.service" library="service.py"/>
   <extension point="xbmc.addon.metadata">
     <summary lang="en_GB">Native Kodi Netflix browsing with playback in a trusted DRM client</summary>
-    <description lang="en_GB">A clean Netflix add-on for Kodi. Browsing (home rows, box art, My List, search, episodes, profiles) is served by a single embedded Microsoft Edge WebView2 window that the add-on queries through Netflix's own in-page data client over localhost — so there is no DRM, no key handling and no fragile API reverse-engineering. Playback runs in that same WebView2 window (Netflix-trusted; up to 4K via PlayReady SL3000 on Windows) with the Kodi subtitle font applied, or is delegated to the OS browser/app. Each user signs in to their own account. Windows only for embedded mode; other platforms delegate.</description>
-    <platform>all</platform>
+    <summary lang="ko_KR">Kodi에서 Netflix를 네이티브 목록으로 탐색하고 신뢰된 DRM 클라이언트에서 재생</summary>
+    <summary lang="ja_JP">KodiでNetflixをネイティブに閲覧し、信頼されたDRMクライアントで再生</summary>
+    <summary lang="zh_CN">在 Kodi 中原生浏览 Netflix，并在受信任的 DRM 客户端中播放</summary>
+    <summary lang="zh_TW">在 Kodi 中原生瀏覽 Netflix，並在受信任的 DRM 用戶端中播放</summary>
+    <summary lang="de_DE">Netflix nativ in Kodi durchsuchen, Wiedergabe in einem vertrauenswürdigen DRM-Client</summary>
+    <summary lang="fr_FR">Parcourir Netflix nativement dans Kodi, avec lecture dans un client DRM de confiance</summary>
+    <summary lang="es_ES">Explora Netflix de forma nativa en Kodi y reprodúcelo en un cliente DRM de confianza</summary>
+    <summary lang="it_IT">Sfoglia Netflix in modo nativo in Kodi, con riproduzione in un client DRM affidabile</summary>
+    <summary lang="pt_BR">Navegue na Netflix de forma nativa no Kodi, com reprodução em um cliente DRM confiável</summary>
+    <summary lang="ru_RU">Нативный просмотр Netflix в Kodi с воспроизведением в доверенном DRM-клиенте</summary>
+    <summary lang="pl_PL">Natywne przeglądanie Netflix w Kodi z odtwarzaniem w zaufanym kliencie DRM</summary>
+    <description lang="en_GB">A clean Netflix add-on for Kodi. Browsing (home rows, box art, My List, search, episodes, profiles) is served by a single embedded Microsoft Edge WebView2 window that the add-on queries through Netflix's own in-page data client over localhost — so there is no DRM, no key handling and no fragile API reverse-engineering. Playback runs in that same WebView2 window (Netflix-trusted; up to 4K via PlayReady SL3000 on Windows) with the Kodi subtitle font applied, or is delegated to the OS browser/app. Each user signs in to their own account. Windows only (desktop Kodi): browsing needs the WebView2 runtime that ships with Windows 10/11.</description>
+    <description lang="ko_KR">Netflix의 홈 행, 내가 찜한 리스트, 검색, 에피소드, 프로필을 Kodi 목록으로 탐색합니다. 목록은 내 계정으로 로그인한 숨은 Microsoft Edge WebView2 창에서 받아 오고, 재생도 그 창에서 최대 4K로 Kodi 자막 폰트를 적용해 합니다. 각자 자기 계정으로 로그인합니다. Windows 전용입니다(Windows 10/11의 데스크톱 Kodi).</description>
+    <description lang="ja_JP">Netflixのホームの各列、マイリスト、検索、エピソード、プロフィールをKodiのリストとして閲覧できます。リストは自分のアカウントでログインした非表示のMicrosoft Edge WebView2ウィンドウから取得し、再生も同じウィンドウで最大4K、Kodiの字幕フォントを適用して行います。各ユーザーが自分のアカウントでログインします。Windows専用です（Windows 10/11のデスクトップ版Kodi）。</description>
+    <description lang="zh_CN">以 Kodi 原生列表浏览 Netflix 的首页各栏、我的片单、搜索、分集和个人资料。列表来自已用你自己的帐户登录的隐藏 Microsoft Edge WebView2 窗口，影片也在该窗口中播放，最高 4K，并使用 Kodi 字幕字体。每位用户使用自己的帐户登录。仅支持 Windows（Windows 10/11 上的桌面版 Kodi）。</description>
+    <description lang="zh_TW">以 Kodi 原生清單瀏覽 Netflix 的首頁各列、我的片單、搜尋、集數和個人檔案。清單來自以你自己的帳戶登入的隱藏 Microsoft Edge WebView2 視窗，影片也在該視窗中播放，最高 4K，並套用 Kodi 字幕字型。每位使用者以自己的帳戶登入。僅支援 Windows（Windows 10/11 上的桌面版 Kodi）。</description>
+    <description lang="de_DE">Durchsuchen Sie Netflix (Startseiten-Reihen, Meine Liste, Suche, Folgen, Profile) als native Kodi-Listen. Die Listen stammen aus einem verborgenen Microsoft-Edge-WebView2-Fenster, das mit Ihrem eigenen Konto angemeldet ist; Titel werden in diesem Fenster in bis zu 4K mit Ihrer Kodi-Untertitelschrift abgespielt. Jeder meldet sich mit seinem eigenen Konto an. Nur für Windows (Desktop-Kodi unter Windows 10/11).</description>
+    <description lang="fr_FR">Parcourez Netflix (rangées de l'accueil, Ma liste, recherche, épisodes, profils) sous forme de listes Kodi natives. Les listes proviennent d'une fenêtre Microsoft Edge WebView2 masquée, connectée à votre propre compte, et les titres sont lus dans cette fenêtre jusqu'en 4K avec votre police de sous-titres Kodi. Chacun se connecte avec son propre compte. Windows uniquement (Kodi pour ordinateur sous Windows 10/11).</description>
+    <description lang="es_ES">Explora Netflix (filas del inicio, Mi lista, búsqueda, episodios, perfiles) como listas nativas de Kodi. Las listas se obtienen de una ventana oculta de Microsoft Edge WebView2 con tu propia cuenta, y los títulos se reproducen en esa ventana hasta en 4K con tu fuente de subtítulos de Kodi. Cada usuario inicia sesión con su propia cuenta. Solo para Windows (Kodi de escritorio en Windows 10/11).</description>
+    <description lang="it_IT">Sfoglia Netflix (file della home, La mia lista, ricerca, episodi, profili) come elenchi nativi di Kodi. Gli elenchi provengono da una finestra nascosta di Microsoft Edge WebView2 collegata al tuo account e i titoli vengono riprodotti in quella finestra fino al 4K con il font dei sottotitoli di Kodi. Ognuno accede con il proprio account. Solo per Windows (Kodi desktop su Windows 10/11).</description>
+    <description lang="pt_BR">Navegue na Netflix (fileiras do início, Minha lista, busca, episódios, perfis) como listas nativas do Kodi. As listas vêm de uma janela oculta do Microsoft Edge WebView2 conectada à sua própria conta, e os títulos são reproduzidos nessa janela em até 4K com a fonte de legenda do Kodi. Cada pessoa entra com a própria conta. Somente Windows (Kodi para desktop no Windows 10/11).</description>
+    <description lang="ru_RU">Просматривайте Netflix (ряды главной, «Мой список», поиск, серии, профили) в виде обычных списков Kodi. Списки берутся из скрытого окна Microsoft Edge WebView2, в котором выполнен вход в ваш аккаунт, а воспроизведение идёт в этом же окне — до 4K, со шрифтом субтитров Kodi. Каждый входит в свой аккаунт. Только для Windows (настольная версия Kodi в Windows 10/11).</description>
+    <description lang="pl_PL">Przeglądaj Netflix (rzędy strony głównej, Moja lista, wyszukiwanie, odcinki, profile) jako natywne listy Kodi. Listy pochodzą z ukrytego okna Microsoft Edge WebView2 zalogowanego na Twoje konto, a tytuły są odtwarzane w tym oknie w jakości do 4K z czcionką napisów Kodi. Każdy loguje się na własne konto. Tylko Windows (Kodi na komputery z Windows 10/11).</description>
+    <platform>windows</platform>
     <license>MIT</license>
     <forum></forum>
     <source></source>

@@ -1,0 +1,312 @@
+# Kodi Media Center language file
+# Addon Name: Nflix
+# Addon id: plugin.video.nfbridge
+msgid ""
+msgstr ""
+"Project-Id-Version: plugin.video.nfbridge\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: zh_TW\n"
+
+# ---- Browse ----
+msgctxt "#30001"
+msgid "Search"
+msgstr "搜尋"
+
+msgctxt "#30002"
+msgid "My List"
+msgstr "我的片單"
+
+msgctxt "#30003"
+msgid "Series & Movies"
+msgstr "影集與電影"
+
+msgctxt "#30004"
+msgid "Profiles"
+msgstr "個人檔案"
+
+msgctxt "#30005"
+msgid "Sign out"
+msgstr "登出"
+
+msgctxt "#30006"
+msgid "Sign in to Netflix"
+msgstr "登入 Netflix"
+
+msgctxt "#30007"
+msgid "Series"
+msgstr "影集"
+
+msgctxt "#30008"
+msgid "Movies"
+msgstr "電影"
+
+msgctxt "#30009"
+msgid "Starting Netflix..."
+msgstr "正在啟動 Netflix..."
+
+msgctxt "#30010"
+msgid "Stop the current playback to browse Netflix"
+msgstr "請先停止目前的播放，再瀏覽 Netflix"
+
+msgctxt "#30011"
+msgid "Profile switched"
+msgstr "已切換個人檔案"
+
+msgctxt "#30012"
+msgid "Netflix is busy - try again"
+msgstr "Netflix 忙碌中，請再試一次"
+
+# ---- Player OSD ----
+msgctxt "#30020"
+msgid "Play"
+msgstr "播放"
+
+msgctxt "#30021"
+msgid "Pause"
+msgstr "暫停"
+
+msgctxt "#30022"
+msgid "Subtitles"
+msgstr "字幕"
+
+msgctxt "#30023"
+msgid "Next episode"
+msgstr "下一集"
+
+msgctxt "#30024"
+msgid "Back"
+msgstr "返回"
+
+# ---- Messages ----
+msgctxt "#30030"
+msgid "No Netflix app, Edge or Chrome found for playback"
+msgstr "找不到可用來播放的 Netflix 應用程式、Edge 或 Chrome"
+
+msgctxt "#30031"
+msgid "Netflix is not ready"
+msgstr "Netflix 尚未就緒"
+
+msgctxt "#30032"
+msgid "Profile switch failed"
+msgstr "切換個人檔案失敗"
+
+msgctxt "#30033"
+msgid "Pick a profile in the Netflix window, then open the add-on again"
+msgstr "請在 Netflix 視窗中選擇個人檔案，然後重新開啟附加元件"
+
+msgctxt "#30034"
+msgid "Netflix runtime not found - reinstall the add-on"
+msgstr "找不到 Netflix 執行元件，請重新安裝附加元件"
+
+msgctxt "#30035"
+msgid "Sign in to Netflix in the window, then return to Kodi"
+msgstr "請在視窗中登入 Netflix，然後返回 Kodi"
+
+msgctxt "#30036"
+msgid "Could not open the sign-in window"
+msgstr "無法開啟登入視窗"
+
+msgctxt "#30037"
+msgid "Subtitle font \"{0}\" is unusable - using the Netflix font"
+msgstr "無法使用字幕字型「{0}」，將改用 Netflix 字型"
+
+msgctxt "#30038"
+msgid "Could not process the subtitle font - using the Netflix font"
+msgstr "無法處理字幕字型，將改用 Netflix 字型"
+
+msgctxt "#30039"
+msgid "No video selected"
+msgstr "未選擇影片"
+
+msgctxt "#30040"
+msgid "Not signed in to Netflix - use \"Sign in to Netflix\" first"
+msgstr "尚未登入 Netflix，請先使用「登入 Netflix」"
+
+msgctxt "#30041"
+msgid "Could not load home: {0}"
+msgstr "無法載入首頁：{0}"
+
+msgctxt "#30042"
+msgid "This row is no longer on Netflix"
+msgstr "Netflix 上已沒有這一列"
+
+msgctxt "#30043"
+msgid "Could not load row: {0}"
+msgstr "無法載入此列：{0}"
+
+msgctxt "#30044"
+msgid "No profiles found"
+msgstr "找不到個人檔案"
+
+msgctxt "#30045"
+msgid "Could not load category: {0}"
+msgstr "無法載入類別：{0}"
+
+msgctxt "#30046"
+msgid "To sign out, use the account menu in the Netflix window"
+msgstr "若要登出，請使用 Netflix 視窗中的帳戶選單"
+
+msgctxt "#30047"
+msgid "Could not load My List: {0}"
+msgstr "無法載入我的片單：{0}"
+
+msgctxt "#30048"
+msgid "Search failed: {0}"
+msgstr "搜尋失敗：{0}"
+
+msgctxt "#30049"
+msgid "Could not load episodes: {0}"
+msgstr "無法載入集數：{0}"
+
+msgctxt "#30050"
+msgid "Could not load episodes - try again"
+msgstr "無法載入集數，請再試一次"
+
+msgctxt "#30051"
+msgid "Season {0}"
+msgstr "第 {0} 季"
+
+msgctxt "#30052"
+msgid "Search Netflix"
+msgstr "搜尋 Netflix"
+
+# ---- Settings: categories ----
+msgctxt "#30100"
+msgid "General"
+msgstr "一般"
+
+msgctxt "#30101"
+msgid "Choose how titles play and which Netflix profile to use."
+msgstr "選擇影片的播放方式和要使用的 Netflix 個人檔案。"
+
+msgctxt "#30102"
+msgid "Embedded player"
+msgstr "內建播放器"
+
+msgctxt "#30103"
+msgid "Settings for the built-in WebView2 player window. Used when 'Playback location' is 'Embedded'."
+msgstr "內建 WebView2 播放視窗的設定。僅在「播放位置」為「內建」時使用。"
+
+msgctxt "#30104"
+msgid "Delegate mode"
+msgstr "外部播放"
+
+msgctxt "#30105"
+msgid "Settings for handing playback to an external browser or app. Used when 'Playback location' is 'Delegate'."
+msgstr "將播放交給外部瀏覽器或應用程式時的設定。僅在「播放位置」為「外部播放」時使用。"
+
+# ---- Settings: groups ----
+msgctxt "#30110"
+msgid "Playback"
+msgstr "播放"
+
+msgctxt "#30111"
+msgid "Netflix profile"
+msgstr "Netflix 個人檔案"
+
+msgctxt "#30112"
+msgid "WebView2 host"
+msgstr "WebView2 主機"
+
+msgctxt "#30113"
+msgid "Netflix app / browser"
+msgstr "Netflix 應用程式/瀏覽器"
+
+msgctxt "#30115"
+msgid "Startup"
+msgstr "啟動"
+
+# ---- Settings: playback ----
+msgctxt "#30120"
+msgid "Playback location"
+msgstr "播放位置"
+
+msgctxt "#30121"
+msgid "Where titles play. Embedded: in the add-on's own window (up to 4K, with the Kodi subtitle font). Delegate: hand off to the Netflix app or the Edge/Chrome browser."
+msgstr "選擇影片要在哪裡播放。內建：在附加元件自己的視窗中播放（最高 4K，套用 Kodi 字幕字型）。外部播放：交給 Netflix 應用程式或 Edge/Chrome 瀏覽器。"
+
+msgctxt "#30122"
+msgid "Embedded - built-in window (up to 4K)"
+msgstr "內建 - 內建視窗（最高 4K）"
+
+msgctxt "#30123"
+msgid "Delegate - play in browser/app"
+msgstr "外部播放 - 在瀏覽器/應用程式中播放"
+
+# ---- Settings: profile ----
+msgctxt "#30124"
+msgid "Switch profile..."
+msgstr "切換個人檔案..."
+
+msgctxt "#30125"
+msgid "Choose the Netflix profile to browse and play with."
+msgstr "選擇用於瀏覽和播放的 Netflix 個人檔案。"
+
+msgctxt "#30126"
+msgid "Profile to auto-select on start"
+msgstr "啟動時自動選擇的個人檔案"
+
+msgctxt "#30127"
+msgid "Which profile the browser daemon enters on start (0 = first). Normally just use 'Switch profile...' above."
+msgstr "瀏覽器背景程式啟動時進入的個人檔案序號（0 = 第一個）。一般直接使用上方的「切換個人檔案...」即可。"
+
+msgctxt "#30128"
+msgid "Profile number (0 = first)"
+msgstr "個人檔案序號（0 = 第一個）"
+
+# ---- Settings: embedded player ----
+msgctxt "#30130"
+msgid "Python for the WebView2 host (optional)"
+msgstr "WebView2 主機使用的 Python（選用）"
+
+msgctxt "#30131"
+msgid "Path to a python.exe that has pywebview and fonttools installed; used to run the built-in Netflix window. Leave empty to use the bundled player."
+msgstr "已安裝 pywebview 和 fonttools 的 python.exe 路徑，用來執行內建的 Netflix 視窗。留空則使用隨附的播放器。"
+
+msgctxt "#30132"
+msgid "Select python.exe"
+msgstr "選擇 python.exe"
+
+# ---- Settings: delegate mode ----
+msgctxt "#30140"
+msgid "Prefer the Netflix Store app (4K)"
+msgstr "優先使用市集中的 Netflix 應用程式（4K）"
+
+msgctxt "#30141"
+msgid "If installed, play with the Microsoft Store Netflix app (supports 4K). When off, use the Edge browser."
+msgstr "若已安裝，則使用 Microsoft Store 中的 Netflix 應用程式播放（支援 4K）。關閉時使用 Edge 瀏覽器。"
+
+msgctxt "#30142"
+msgid "Edge executable (override)"
+msgstr "Edge 執行檔（手動指定）"
+
+msgctxt "#30143"
+msgid "Set the path to msedge.exe manually, only if auto-detection fails."
+msgstr "僅在無法自動偵測時，手動指定 msedge.exe 的路徑。"
+
+msgctxt "#30144"
+msgid "Select msedge.exe"
+msgstr "選擇 msedge.exe"
+
+msgctxt "#30145"
+msgid "Chrome executable (override)"
+msgstr "Chrome 執行檔（手動指定）"
+
+msgctxt "#30146"
+msgid "Set the path to chrome.exe manually, only if auto-detection fails. Used when Edge is not found."
+msgstr "僅在無法自動偵測時，手動指定 chrome.exe 的路徑。找不到 Edge 時使用。"
+
+msgctxt "#30147"
+msgid "Select chrome.exe"
+msgstr "選擇 chrome.exe"
+
+# ---- Settings: startup ----
+msgctxt "#30150"
+msgid "Start Netflix with Kodi"
+msgstr "隨 Kodi 啟動 Netflix"
+
+msgctxt "#30151"
+msgid "Start the Netflix browser in the background when Kodi starts and load the home screen, so the add-on opens at once. Uses about 1 GB of memory while Kodi runs."
+msgstr "Kodi 啟動時在背景啟動 Netflix 瀏覽器並預先載入首頁，讓附加元件立即開啟。Kodi 執行期間約使用 1 GB 記憶體。"

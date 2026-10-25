@@ -202,7 +202,7 @@ def end_directory(content='videos', sort=True):
     xbmcplugin.endOfDirectory(handle())
 
 
-def prompt(heading='Search Nflix'):
-    kb = xbmc.Keyboard('', heading)
+def prompt(heading=None):
+    kb = xbmc.Keyboard('', heading or localize(30052, 'Search Netflix'))
     kb.doModal()
     return kb.getText() if kb.isConfirmed() else None

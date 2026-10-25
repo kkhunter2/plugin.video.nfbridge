@@ -21,6 +21,7 @@ EXCLUDE_EXT = {'.pyc', '.spec', '.pyo', '.log'}
 EXCLUDE_FILES = {'.gitignore'}
 # the exe bundles these; if any is newer than the exe, the exe is stale -> rebuild
 EXE_SOURCES = ('webview_host.py', 'fontfix.py', 'build_exe.py', 'icon.ico')
+DIST = os.path.join(ROOT, 'runtime', 'webview', 'dist', 'nfbridge_player')
 
 
 def _version():
@@ -43,7 +44,7 @@ def _exe_stale(exe):
 
 
 def main(argv):
-    exe = os.path.join(ROOT, 'runtime', 'webview', 'dist', 'nfbridge_player.exe')
+    exe = os.path.join(ROOT, 'runtime', 'webview', 'dist', 'nfbridge_player', 'nfbridge_player.exe')
     if '--no-build' not in argv and _exe_stale(exe):
         print('building runtime exe...')
         subprocess.run([sys.executable, os.path.join(ROOT, 'runtime', 'webview', 'build_exe.py')],
@@ -53,9 +54,13 @@ def main(argv):
     n = 0
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         for dirpath, dirnames, filenames in os.walk(ROOT):
-            dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
+            # the built runtime ships whole: its bundled packages may well hold a 'cache'
+            # dir or a .pyc the exclusions below are meant for the source tree
+            built = os.path.relpath(dirpath, DIST).split(os.sep)[0] != '..'
+            if not built:
+                dirnames[:] = [d for d in dirnames if d not in EXCLUDE_DIRS]
             for f in filenames:
-                if os.path.splitext(f)[1].lower() in EXCLUDE_EXT or f in EXCLUDE_FILES:
+                if not built and (os.path.splitext(f)[1].lower() in EXCLUDE_EXT or f in EXCLUDE_FILES):
                     continue
                 full = os.path.join(dirpath, f)
                 rel = os.path.relpath(full, ROOT)

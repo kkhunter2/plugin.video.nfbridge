@@ -9,6 +9,7 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Language: en_GB\n"
 
+# ---- Browse ----
 msgctxt "#30001"
 msgid "Search"
 msgstr ""
@@ -78,6 +79,99 @@ msgctxt "#30024"
 msgid "Back"
 msgstr ""
 
+# ---- Messages ----
+msgctxt "#30030"
+msgid "No Netflix app, Edge or Chrome found for playback"
+msgstr ""
+
+msgctxt "#30031"
+msgid "Netflix is not ready"
+msgstr ""
+
+msgctxt "#30032"
+msgid "Profile switch failed"
+msgstr ""
+
+msgctxt "#30033"
+msgid "Pick a profile in the Netflix window, then open the add-on again"
+msgstr ""
+
+msgctxt "#30034"
+msgid "Netflix runtime not found - reinstall the add-on"
+msgstr ""
+
+msgctxt "#30035"
+msgid "Sign in to Netflix in the window, then return to Kodi"
+msgstr ""
+
+msgctxt "#30036"
+msgid "Could not open the sign-in window"
+msgstr ""
+
+msgctxt "#30037"
+msgid "Subtitle font \"{0}\" is unusable - using the Netflix font"
+msgstr ""
+
+msgctxt "#30038"
+msgid "Could not process the subtitle font - using the Netflix font"
+msgstr ""
+
+msgctxt "#30039"
+msgid "No video selected"
+msgstr ""
+
+msgctxt "#30040"
+msgid "Not signed in to Netflix - use \"Sign in to Netflix\" first"
+msgstr ""
+
+msgctxt "#30041"
+msgid "Could not load home: {0}"
+msgstr ""
+
+msgctxt "#30042"
+msgid "This row is no longer on Netflix"
+msgstr ""
+
+msgctxt "#30043"
+msgid "Could not load row: {0}"
+msgstr ""
+
+msgctxt "#30044"
+msgid "No profiles found"
+msgstr ""
+
+msgctxt "#30045"
+msgid "Could not load category: {0}"
+msgstr ""
+
+msgctxt "#30046"
+msgid "To sign out, use the account menu in the Netflix window"
+msgstr ""
+
+msgctxt "#30047"
+msgid "Could not load My List: {0}"
+msgstr ""
+
+msgctxt "#30048"
+msgid "Search failed: {0}"
+msgstr ""
+
+msgctxt "#30049"
+msgid "Could not load episodes: {0}"
+msgstr ""
+
+msgctxt "#30050"
+msgid "Could not load episodes - try again"
+msgstr ""
+
+msgctxt "#30051"
+msgid "Season {0}"
+msgstr ""
+
+msgctxt "#30052"
+msgid "Search Netflix"
+msgstr ""
+
 # ---- Settings: categories ----
 msgctxt "#30100"
 msgid "General"
@@ -88,7 +182,7 @@ msgid "Choose how titles play and which Netflix profile to use."
 msgstr ""
 
 msgctxt "#30102"
-msgid "Embedded player (Windows)"
+msgid "Embedded player"
 msgstr ""
 
 msgctxt "#30103"
@@ -117,11 +211,11 @@ msgid "WebView2 host"
 msgstr ""
 
 msgctxt "#30113"
-msgid "Windows"
+msgid "Netflix app / browser"
 msgstr ""
 
-msgctxt "#30114"
-msgid "Other platforms"
+msgctxt "#30115"
+msgid "Startup"
 msgstr ""
 
 # ---- Settings: playback ----
@@ -130,11 +224,11 @@ msgid "Playback location"
 msgstr ""
 
 msgctxt "#30121"
-msgid "Where titles play. Embedded: in the add-on's own window (Windows, up to 4K, Kodi subtitle font). Delegate: hand off to the OS Netflix client (Windows = Edge/app, macOS = Safari, Linux = Chrome)."
+msgid "Where titles play. Embedded: in the add-on's own window (up to 4K, with the Kodi subtitle font). Delegate: hand off to the Netflix app or the Edge/Chrome browser."
 msgstr ""
 
 msgctxt "#30122"
-msgid "Embedded - built-in window (Windows, up to 4K)"
+msgid "Embedded - built-in window (up to 4K)"
 msgstr ""
 
 msgctxt "#30123"
@@ -147,7 +241,7 @@ msgid "Switch profile..."
 msgstr ""
 
 msgctxt "#30125"
-msgid "Choose a Netflix profile. After you pick one, the player window shows the 'Who's watching?' screen to complete the switch."
+msgid "Choose the Netflix profile to browse and play with."
 msgstr ""
 
 msgctxt "#30126"
@@ -168,7 +262,7 @@ msgid "Python for the WebView2 host (optional)"
 msgstr ""
 
 msgctxt "#30131"
-msgid "Path to a python.exe that has pywebview and fonttools installed; used to run the built-in Netflix window. Leave empty if you use the bundled exe."
+msgid "Path to a python.exe that has pywebview and fonttools installed; used to run the built-in Netflix window. Leave empty to use the bundled player."
 msgstr ""
 
 msgctxt "#30132"
@@ -197,21 +291,22 @@ msgid "Select msedge.exe"
 msgstr ""
 
 msgctxt "#30145"
-msgid "Chrome/Chromium executable (override)"
+msgid "Chrome executable (override)"
 msgstr ""
 
 msgctxt "#30146"
-msgid "Set the path to the chrome executable manually (e.g. on Linux) if auto-detection fails."
+msgid "Set the path to chrome.exe manually, only if auto-detection fails. Used when Edge is not found."
 msgstr ""
 
 msgctxt "#30147"
-msgid "Select chrome"
+msgid "Select chrome.exe"
 msgstr ""
 
-msgctxt "#30148"
-msgid "macOS browser app name"
+# ---- Settings: startup ----
+msgctxt "#30150"
+msgid "Start Netflix with Kodi"
 msgstr ""
 
-msgctxt "#30149"
-msgid "Name of the browser app used to open Netflix on macOS (e.g. Safari, Google Chrome)."
+msgctxt "#30151"
+msgid "Start the Netflix browser in the background when Kodi starts and load the home screen, so the add-on opens at once. Uses about 1 GB of memory while Kodi runs."
 msgstr ""

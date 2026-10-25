@@ -25,6 +25,8 @@ import sys
 import json
 import threading
 import time
+from html import unescape
+from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fontfix  # noqa: E402
@@ -391,12 +393,25 @@ SEARCH_EXTRACT_JS = (
     'return JSON.stringify(out);}catch(e){return "[]";}})()')
 
 
-def _search_get(window, q, timeout=15):
+def _navigate(window, url, wait=6):
+    """location.assign(url), then wait (up to `wait` s) for the NEW document: the old one
+    keeps answering evaluate_js until the navigation commits, and reading it in that window
+    returns the previous page's data (a category's rows as home's, the last search's hits)."""
     try:
-        window.evaluate_js("location.assign('https://www.netflix.com/search?q='+encodeURIComponent(%s))"
-                           % json.dumps(q))
+        window.evaluate_js("window.__NFOLD=1;window.__PSEL=0;location.assign(%s)" % json.dumps(url))
     except Exception:
-        pass
+        return
+    for _ in range(int(wait * 4)):
+        time.sleep(0.25)
+        try:
+            if not window.evaluate_js('window.__NFOLD'):
+                return
+        except Exception:
+            pass
+
+
+def _search_get(window, q, timeout=15):
+    _navigate(window, 'https://www.netflix.com/search?q=' + quote(q, safe="!'()*"))
     for _ in range(timeout * 2):
         try:
             arr = json.loads(window.evaluate_js(SEARCH_EXTRACT_JS) or '[]')
@@ -425,10 +440,7 @@ def _episodes_get(window, vid, timeout=15):
     (["seasons",id,"episodes",range,"itemSummary"]) — both work off-screen, no flash."""
     _set_fullscreen(window, False)
     _render_offscreen(window)
-    try:
-        window.evaluate_js("location.assign('https://www.netflix.com/title/%s')" % str(vid))
-    except Exception:
-        pass
+    _navigate(window, 'https://www.netflix.com/title/%s' % vid)
     meta = []
     sjs = _season_list_js(vid)
     title_js = "location.assign('https://www.netflix.com/title/%s')" % str(vid)
@@ -581,6 +593,10 @@ Object.keys(best).forEach(function(f){if(f.indexOf("sections")!==0)return;
  ((best[f]||{}).edges||[]).forEach(function(ed){var ref=(ed.node||{}).__ref;if(!ref||seen[ref])return;seen[ref]=1;
   var s=c[ref];if(!s||!/CarouselSection/.test(s.__typename||""))return;
   var row={index:idx++,title:s.displayString||"",id:s.id||"",total:((s.entities||{}).totalCount)||0,videos:[]};
+  // Continue Watching: its tiles are Pinot*ContinueWatching*EntityTreatment
+  Object.keys(s).some(function(g){if(g.indexOf("entities")!==0)return false;
+   var e0=((s[g]||{}).edges||[])[0],tr=e0&&c[(e0.node||{}).__ref];
+   row.cw=!!(tr&&/ContinueWatching/.test(tr.__typename||""));return row.cw;});
   if(opt.videos||opt.row===row.index||(opt.title&&opt.title===row.title)){
    var vseen={};
    Object.keys(s).forEach(function(g){if(g.indexOf("entities")!==0)return;
@@ -624,12 +640,14 @@ def _pinot_rows(window, **opt):
         return {'rows': [], 'err': str(exc)}
 
 
-def _pinot_page(window, path='/browse', rows=40, row=None, title=None, n=40, videos=False, timeout=25):
+def _pinot_page(window, path='/browse', rows=40, row=None, title=None, n=40, videos=False, timeout=25,
+                quiet=False):
     """Serve a browse page's rows from the Pinot cache.
       path   : /browse | /browse/genre/<id> | /browse/my-list (navigated to if not there)
       rows   : load at least this many sections (scrolls the page)
       row    : with title: return THAT row's videos, after paging its carousel to >= n
       videos : include each loaded row's (currently loaded) videos
+      quiet  : a background prefetch: don't pull Kodi to the front (see _done_focus)
     Returns {path, rows:[{index,title,id,total,videos}]} (videos empty unless asked)."""
     _set_fullscreen(window, False)
     _render_offscreen(window)
@@ -639,10 +657,7 @@ def _pinot_page(window, path='/browse', rows=40, row=None, title=None, n=40, vid
     except Exception:
         cur = ''
     if cur.rstrip('/') != path.rstrip('/'):
-        try:
-            window.evaluate_js("window.__PSEL=0;location.assign(%s)" % json.dumps(url))
-        except Exception:
-            pass
+        _navigate(window, url)
     # wait for the page (handle the profile gate and the /account bounce on the way)
     data = {}
     for _t in range(timeout * 2):
@@ -657,50 +672,102 @@ def _pinot_page(window, path='/browse', rows=40, row=None, title=None, n=40, vid
         except Exception:
             pass
         time.sleep(0.5)
-    want = max(rows, (row or 0) + 1)
-    stale = 0
-    while len(data.get('rows') or []) < want and stale < 3:
-        before = len(data.get('rows') or [])
+    def _enough(d):
+        have = d.get('rows') or []
+        # one row: scroll only until THAT row is loaded (by title; else by index), not
+        # the whole page — a fresh page holds just the first sections (e.g. after playback)
+        if title:
+            return any(_same_title(r, title) for r in have)
+        if row is not None:
+            return len(have) > int(row)
+        return len(have) >= rows
+    def _sentinel():
         try:
-            if window.evaluate_js(SCROLL_SENTINEL_JS) == 'nosent':
-                break                      # everything the page has is loaded
+            return window.evaluate_js(SCROLL_SENTINEL_JS)
         except Exception:
-            pass
-        time.sleep(2.0)
-        data = _pinot_rows(window)
+            return None
+    # complete: what was asked for is loaded, or the page has no more sections — so a
+    # row title that is still missing is really gone (not just slow to load)
+    complete = False
+    stale = 0
+    while stale < 3:
+        if _enough(data):
+            complete = True
+            break
+        before = len(data.get('rows') or [])
+        if _sentinel() == 'nosent':
+            # gone = every section is loaded; it can also be missing for a moment while
+            # the page renders the last batch, so look again before believing it
+            time.sleep(1.0)
+            d = _pinot_rows(window)
+            if d.get('rows'):
+                data = d
+            if _sentinel() == 'nosent':
+                complete = True
+                break
+        # the next batch usually lands well within a second: poll for it (up to 3 s)
+        # instead of a fixed wait, then let the page render it before the next scroll
+        for _ in range(12):
+            time.sleep(0.25)
+            d = _pinot_rows(window)
+            if d.get('rows'):              # a failed read must not wipe what was loaded
+                data = d
+            if len(data.get('rows') or []) > before:
+                time.sleep(0.4)
+                break
         stale = stale + 1 if len(data.get('rows') or []) <= before else 0
     if row is None and not title:
         if videos:
             data = _pinot_rows(window, videos=True)
-        _focus_kodi()
-        return {'path': path, 'rows': data.get('rows') or [], 'err': data.get('err')}
-    # one row: page its carousel until it holds >= n entities (or stops growing)
-    sel = _pinot_rows(window, row=row, title=title or '')
-    pick = _pick_row(sel, row, title)
-    stale, clicks = 0, 0
+        _done_focus(quiet)
+        return {'path': path, 'rows': data.get('rows') or [], 'complete': complete,
+                'err': data.get('err')}
+    # one row. With a title, find it BY TITLE and go on by its index (the in-page video
+    # filter compares raw titles); a title that isn't on the page returns no row rather
+    # than another row that now sits at the old index.
+    if title:
+        hit = next((r for r in data.get('rows') or [] if _same_title(r, title)), None)
+        row = hit['index'] if hit else None
+    sel = _pinot_rows(window, row=row) if row is not None else data
+    pick = _pick_row(sel, row)
+    stale, clicks, nf = 0, 0, 0
     # each arrow click advances one viewport of tiles; the carousel fetches its next
     # entity page (~16) as it nears the loaded end, so a few clicks are needed per page
-    while pick and len(pick['videos']) < min(n, pick.get('total') or n) and stale < 3 and clicks < 10:
+    while (pick and len(pick['videos']) < min(n, pick.get('total') or n)
+           and stale < 3 and nf < 3 and clicks < 10):
         before = len(pick['videos'])
         try:
-            window.evaluate_js(ROW_NEXT_JS % (json.dumps(pick['title']), int(pick['index'])))
+            res = window.evaluate_js(ROW_NEXT_JS % (json.dumps(pick['title']), int(pick['index'])))
         except Exception:
-            pass
+            res = None
         clicks += 1
         time.sleep(1.2)
-        sel = _pinot_rows(window, row=row, title=title or '')
-        pick = _pick_row(sel, row, title) or pick
-        stale = stale + 1 if len(pick['videos']) <= before else 0
-    _focus_kodi()
-    return {'path': path, 'rows': sel.get('rows') or [], 'row': pick, 'err': sel.get('err')}
+        sel = _pinot_rows(window, row=row)
+        pick = _pick_row(sel, row) or pick
+        if res == 'nf':
+            nf += 1        # the row isn't drawn yet (just loaded into the cache): not a stall
+        else:
+            stale = stale + 1 if len(pick['videos']) <= before else 0
+    _done_focus(quiet)
+    return {'path': path, 'rows': sel.get('rows') or [], 'row': pick, 'complete': complete,
+            'err': sel.get('err')}
 
 
-def _pick_row(data, row, title):
+def _done_focus(quiet):
+    """Hand the keyboard back to Kodi after a browse request. A quiet one (the Kodi-start
+    prefetch) may run while the user is in another app: only take the foreground back
+    if our window took it."""
+    if not quiet or _foreground_is_daemon():
+        _focus_kodi()
+
+
+def _same_title(r, title):
+    # Kodi gets the title unescaped (nfclient._txt); displayString may be HTML-escaped
+    return unescape(r.get('title') or '') == unescape(title)
+
+
+def _pick_row(data, row):
     rows = data.get('rows') or []
-    if title:
-        for r in rows:
-            if r.get('title') == title:
-                return r
     if row is not None and 0 <= int(row) < len(rows):
         return rows[int(row)]
     return None
@@ -1135,11 +1202,14 @@ def _start_rpc(window, port):
                 send(self, 200, {'seasons': _episodes_get(window, req.get('videoId', ''))})
             elif self.path == '/home':
                 send(self, 200, _go_home(window))
+            elif self.path == '/pinot' and req.get('quiet') and _FS[0]:
+                # a background prefetch never takes the window from a playing title
+                send(self, 200, {'rows': [], 'err': 'playing'})
             elif self.path == '/pinot':
                 send(self, 200, _pinot_page(
                     window, req.get('path') or '/browse', rows=int(req.get('rows') or 40),
                     row=req.get('row'), title=req.get('title'), n=int(req.get('n') or 40),
-                    videos=bool(req.get('videos'))))
+                    videos=bool(req.get('videos')), quiet=bool(req.get('quiet'))))
             elif self.path == '/switch':
                 send(self, 200, _switch_profile(window, req.get('index', 0), req.get('guid', '')))
             elif self.path == '/eval':
@@ -1474,9 +1544,11 @@ def on_start(window):
     threading.Thread(target=window_monitor, args=(window,), daemon=True).start()
 
 
-if not os.path.isdir(CACHE):
-    os.makedirs(CACHE)
+# (only a standalone run falls back to CACHE: the onedir build's HERE is in the add-on
+# folder, which must not collect a profile)
 _profile = os.environ.get('NF_PROFILE') or os.path.join(CACHE, 'profile')
+if not os.path.isdir(_profile):
+    os.makedirs(_profile)
 
 
 def _cleanup_stale(profile, port):
@@ -1484,6 +1556,11 @@ def _cleanup_stale(profile, port):
     profile lock, so the next launch fails with 'Main window failed to start'. If no
     live daemon owns the RPC port, kill our orphaned WebView2 children and clear the
     lock so this fresh start succeeds."""
+    # Chromium holds EBWebView\lockfile open delete-on-close: no file = no WebView2 process
+    # on this profile, so nothing to clean (skips a 0.5 s port probe + a PowerShell run
+    # on every normal start)
+    if not os.path.exists(os.path.join(profile, 'EBWebView', 'lockfile')):
+        return
     import socket
     s = socket.socket()
     s.settimeout(0.5)

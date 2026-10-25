@@ -1,0 +1,312 @@
+# Kodi Media Center language file
+# Addon Name: Nflix
+# Addon id: plugin.video.nfbridge
+msgid ""
+msgstr ""
+"Project-Id-Version: plugin.video.nfbridge\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: ja_JP\n"
+
+# ---- Browse ----
+msgctxt "#30001"
+msgid "Search"
+msgstr "検索"
+
+msgctxt "#30002"
+msgid "My List"
+msgstr "マイリスト"
+
+msgctxt "#30003"
+msgid "Series & Movies"
+msgstr "TV番組・映画"
+
+msgctxt "#30004"
+msgid "Profiles"
+msgstr "プロフィール"
+
+msgctxt "#30005"
+msgid "Sign out"
+msgstr "ログアウト"
+
+msgctxt "#30006"
+msgid "Sign in to Netflix"
+msgstr "Netflixにログイン"
+
+msgctxt "#30007"
+msgid "Series"
+msgstr "TV番組・ドラマ"
+
+msgctxt "#30008"
+msgid "Movies"
+msgstr "映画"
+
+msgctxt "#30009"
+msgid "Starting Netflix..."
+msgstr "Netflixを起動しています..."
+
+msgctxt "#30010"
+msgid "Stop the current playback to browse Netflix"
+msgstr "Netflixを閲覧するには、再生中のコンテンツを停止してください"
+
+msgctxt "#30011"
+msgid "Profile switched"
+msgstr "プロフィールを切り替えました"
+
+msgctxt "#30012"
+msgid "Netflix is busy - try again"
+msgstr "Netflixは処理中です。もう一度お試しください"
+
+# ---- Player OSD ----
+msgctxt "#30020"
+msgid "Play"
+msgstr "再生"
+
+msgctxt "#30021"
+msgid "Pause"
+msgstr "一時停止"
+
+msgctxt "#30022"
+msgid "Subtitles"
+msgstr "字幕"
+
+msgctxt "#30023"
+msgid "Next episode"
+msgstr "次のエピソード"
+
+msgctxt "#30024"
+msgid "Back"
+msgstr "戻る"
+
+# ---- Messages ----
+msgctxt "#30030"
+msgid "No Netflix app, Edge or Chrome found for playback"
+msgstr "再生に使えるNetflixアプリ、Edge、Chromeが見つかりません"
+
+msgctxt "#30031"
+msgid "Netflix is not ready"
+msgstr "Netflixの準備ができていません"
+
+msgctxt "#30032"
+msgid "Profile switch failed"
+msgstr "プロフィールを切り替えられませんでした"
+
+msgctxt "#30033"
+msgid "Pick a profile in the Netflix window, then open the add-on again"
+msgstr "Netflixのウィンドウでプロフィールを選んでから、アドオンをもう一度開いてください"
+
+msgctxt "#30034"
+msgid "Netflix runtime not found - reinstall the add-on"
+msgstr "Netflixのランタイムが見つかりません。アドオンを再インストールしてください"
+
+msgctxt "#30035"
+msgid "Sign in to Netflix in the window, then return to Kodi"
+msgstr "ウィンドウでNetflixにログインしてから、Kodiに戻ってください"
+
+msgctxt "#30036"
+msgid "Could not open the sign-in window"
+msgstr "ログインウィンドウを開けませんでした"
+
+msgctxt "#30037"
+msgid "Subtitle font \"{0}\" is unusable - using the Netflix font"
+msgstr "字幕フォント「{0}」は使用できないため、Netflixのフォントを使用します"
+
+msgctxt "#30038"
+msgid "Could not process the subtitle font - using the Netflix font"
+msgstr "字幕フォントを処理できなかったため、Netflixのフォントを使用します"
+
+msgctxt "#30039"
+msgid "No video selected"
+msgstr "動画が選択されていません"
+
+msgctxt "#30040"
+msgid "Not signed in to Netflix - use \"Sign in to Netflix\" first"
+msgstr "Netflixにログインしていません。先に「Netflixにログイン」を実行してください"
+
+msgctxt "#30041"
+msgid "Could not load home: {0}"
+msgstr "ホームを読み込めませんでした: {0}"
+
+msgctxt "#30042"
+msgid "This row is no longer on Netflix"
+msgstr "この一覧はNetflixにもうありません"
+
+msgctxt "#30043"
+msgid "Could not load row: {0}"
+msgstr "一覧を読み込めませんでした: {0}"
+
+msgctxt "#30044"
+msgid "No profiles found"
+msgstr "プロフィールが見つかりません"
+
+msgctxt "#30045"
+msgid "Could not load category: {0}"
+msgstr "カテゴリーを読み込めませんでした: {0}"
+
+msgctxt "#30046"
+msgid "To sign out, use the account menu in the Netflix window"
+msgstr "ログアウトするには、Netflixのウィンドウのアカウントメニューを使ってください"
+
+msgctxt "#30047"
+msgid "Could not load My List: {0}"
+msgstr "マイリストを読み込めませんでした: {0}"
+
+msgctxt "#30048"
+msgid "Search failed: {0}"
+msgstr "検索に失敗しました: {0}"
+
+msgctxt "#30049"
+msgid "Could not load episodes: {0}"
+msgstr "エピソードを読み込めませんでした: {0}"
+
+msgctxt "#30050"
+msgid "Could not load episodes - try again"
+msgstr "エピソードを読み込めませんでした。もう一度お試しください"
+
+msgctxt "#30051"
+msgid "Season {0}"
+msgstr "シーズン{0}"
+
+msgctxt "#30052"
+msgid "Search Netflix"
+msgstr "Netflixを検索"
+
+# ---- Settings: categories ----
+msgctxt "#30100"
+msgid "General"
+msgstr "一般"
+
+msgctxt "#30101"
+msgid "Choose how titles play and which Netflix profile to use."
+msgstr "作品の再生方法と、使用するNetflixプロフィールを設定します。"
+
+msgctxt "#30102"
+msgid "Embedded player"
+msgstr "内蔵プレーヤー"
+
+msgctxt "#30103"
+msgid "Settings for the built-in WebView2 player window. Used when 'Playback location' is 'Embedded'."
+msgstr "内蔵WebView2プレーヤーウィンドウの設定です。「再生場所」が「内蔵」のときに使用されます。"
+
+msgctxt "#30104"
+msgid "Delegate mode"
+msgstr "外部再生"
+
+msgctxt "#30105"
+msgid "Settings for handing playback to an external browser or app. Used when 'Playback location' is 'Delegate'."
+msgstr "再生を外部のブラウザーやアプリに任せるときの設定です。「再生場所」が「外部再生」のときに使用されます。"
+
+# ---- Settings: groups ----
+msgctxt "#30110"
+msgid "Playback"
+msgstr "再生"
+
+msgctxt "#30111"
+msgid "Netflix profile"
+msgstr "Netflixプロフィール"
+
+msgctxt "#30112"
+msgid "WebView2 host"
+msgstr "WebView2ホスト"
+
+msgctxt "#30113"
+msgid "Netflix app / browser"
+msgstr "Netflixアプリ／ブラウザー"
+
+msgctxt "#30115"
+msgid "Startup"
+msgstr "起動"
+
+# ---- Settings: playback ----
+msgctxt "#30120"
+msgid "Playback location"
+msgstr "再生場所"
+
+msgctxt "#30121"
+msgid "Where titles play. Embedded: in the add-on's own window (up to 4K, with the Kodi subtitle font). Delegate: hand off to the Netflix app or the Edge/Chrome browser."
+msgstr "作品を再生する場所を選びます。内蔵: アドオン自身のウィンドウで再生します（最大4K、Kodiの字幕フォントを適用）。外部再生: NetflixアプリまたはEdge／Chromeブラウザーに任せます。"
+
+msgctxt "#30122"
+msgid "Embedded - built-in window (up to 4K)"
+msgstr "内蔵 - 内蔵ウィンドウ（最大4K）"
+
+msgctxt "#30123"
+msgid "Delegate - play in browser/app"
+msgstr "外部再生 - ブラウザー／アプリで再生"
+
+# ---- Settings: profile ----
+msgctxt "#30124"
+msgid "Switch profile..."
+msgstr "プロフィールを切り替え..."
+
+msgctxt "#30125"
+msgid "Choose the Netflix profile to browse and play with."
+msgstr "閲覧と再生に使うNetflixプロフィールを選びます。"
+
+msgctxt "#30126"
+msgid "Profile to auto-select on start"
+msgstr "起動時に自動選択するプロフィール"
+
+msgctxt "#30127"
+msgid "Which profile the browser daemon enters on start (0 = first). Normally just use 'Switch profile...' above."
+msgstr "ブラウザーのデーモンが起動時に入るプロフィールの番号です（0 = 最初）。通常は上の「プロフィールを切り替え...」を使ってください。"
+
+msgctxt "#30128"
+msgid "Profile number (0 = first)"
+msgstr "プロフィール番号（0 = 最初）"
+
+# ---- Settings: embedded player ----
+msgctxt "#30130"
+msgid "Python for the WebView2 host (optional)"
+msgstr "WebView2ホスト用のPython（任意）"
+
+msgctxt "#30131"
+msgid "Path to a python.exe that has pywebview and fonttools installed; used to run the built-in Netflix window. Leave empty to use the bundled player."
+msgstr "pywebviewとfonttoolsがインストールされたpython.exeのパスです。内蔵のNetflixウィンドウの実行に使います。空欄にすると同梱のプレーヤーを使います。"
+
+msgctxt "#30132"
+msgid "Select python.exe"
+msgstr "python.exeを選択"
+
+# ---- Settings: delegate mode ----
+msgctxt "#30140"
+msgid "Prefer the Netflix Store app (4K)"
+msgstr "Netflixのストアアプリを優先（4K）"
+
+msgctxt "#30141"
+msgid "If installed, play with the Microsoft Store Netflix app (supports 4K). When off, use the Edge browser."
+msgstr "インストールされている場合、Microsoft StoreのNetflixアプリで再生します（4K対応）。オフにするとEdgeブラウザーを使います。"
+
+msgctxt "#30142"
+msgid "Edge executable (override)"
+msgstr "Edgeの実行ファイル（手動指定）"
+
+msgctxt "#30143"
+msgid "Set the path to msedge.exe manually, only if auto-detection fails."
+msgstr "自動検出できない場合にのみ、msedge.exeのパスを指定します。"
+
+msgctxt "#30144"
+msgid "Select msedge.exe"
+msgstr "msedge.exeを選択"
+
+msgctxt "#30145"
+msgid "Chrome executable (override)"
+msgstr "Chromeの実行ファイル（手動指定）"
+
+msgctxt "#30146"
+msgid "Set the path to chrome.exe manually, only if auto-detection fails. Used when Edge is not found."
+msgstr "自動検出できない場合にのみ、chrome.exeのパスを指定します。Edgeが見つからないときに使います。"
+
+msgctxt "#30147"
+msgid "Select chrome.exe"
+msgstr "chrome.exeを選択"
+
+# ---- Settings: startup ----
+msgctxt "#30150"
+msgid "Start Netflix with Kodi"
+msgstr "Kodiと一緒にNetflixを起動"
+
+msgctxt "#30151"
+msgid "Start the Netflix browser in the background when Kodi starts and load the home screen, so the add-on opens at once. Uses about 1 GB of memory while Kodi runs."
+msgstr "Kodiの起動時にNetflixブラウザーをバックグラウンドで起動してホーム画面を読み込んでおき、アドオンがすぐに開くようにします。Kodiの実行中は約1GBのメモリを使用します。"

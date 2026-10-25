@@ -39,6 +39,14 @@
           <control type="edit" format="string"/>
         </setting>
       </group>
+
+      <group id="3" label="30115">
+        <setting id="prestart" type="boolean" label="30150" help="30151">
+          <level>0</level>
+          <default>true</default>
+          <control type="toggle"/>
+        </setting>
+      </group>
     </category>
 
     <!-- ============ Embedded player ============ -->
@@ -65,17 +73,10 @@
           <default></default><constraints><allowempty>true</allowempty></constraints>
           <control type="button" format="file"><heading>30144</heading></control>
         </setting>
-      </group>
-      <group id="2" label="30114">
         <setting id="chrome_path" type="path" label="30145" help="30146">
           <level>1</level>
           <default></default><constraints><allowempty>true</allowempty></constraints>
           <control type="button" format="file"><heading>30147</heading></control>
-        </setting>
-        <setting id="macos_browser" type="string" label="30148" help="30149">
-          <level>1</level>
-          <default>Safari</default>
-          <control type="edit" format="string"/>
         </setting>
       </group>
     </category>

@@ -3,8 +3,8 @@
 [English](README.md) | **한국어**
 
 Kodi에서 Netflix를 네이티브 목록 화면으로 탐색하고, 재생은 Netflix가 신뢰하는
-Microsoft Edge WebView2 창에서 하는 Kodi 애드온입니다. Windows에서는 최대 4K로 재생되며
-Kodi에서 설정한 자막 폰트가 그대로 적용됩니다.
+Microsoft Edge WebView2 창에서 하는 Kodi 애드온입니다. 최대 4K로 재생되며 Kodi에서 설정한
+자막 폰트가 그대로 적용됩니다. **Windows 전용**입니다(Windows 10/11의 데스크톱 Kodi 20 이상).
 
 2026년 6월 DRM 조사에서 내린 결론을 바탕으로 만들었습니다. **오픈 애드온은 데스크톱에서
 Netflix를 복호화할 수 없습니다**(VMP, Media Foundation TEE, 기기 키라는 경계 때문).
@@ -38,8 +38,11 @@ resources/lib/routes.py     -> Kodi 디렉터리 목록
 resources/lib/player.py     데몬 생명주기 + 재생 (임베디드) / 위임 모드 대체 경로
 ```
 
-`playback_mode` 설정으로 임베디드와 위임 중 하나를 고릅니다. **Windows의 기본값은
-임베디드**(WebView2)이고, 다른 OS에서는 위임(OS 브라우저나 앱)입니다.
+`playback_mode` 설정으로 임베디드(기본값, WebView2)와 위임(Edge나 Chrome) 중 하나를
+고릅니다. 목록은 항상 WebView2 데몬을 거치기 때문에 이 애드온은 Windows 전용입니다.
+macOS는 숨긴 창으로 목록을 받으면 WebKit의 백그라운드 제한에 걸리고, 데스크톱 Linux에는
+바로 쓸 수 있는 Netflix용 내장 엔진이 없으며, Android와 LibreELEC에는 띄울 브라우저 엔진
+자체가 없습니다(2026년 10월 검토).
 
 > **임베디드 = Microsoft Edge WebView2 (Windows).** 시스템 Edge 엔진은 Microsoft가
 > 서명했고 Netflix가 신뢰하기 때문에, Netflix가 **애드온 자체 창에서 최대 4K(PlayReady
@@ -108,7 +111,10 @@ DRM을 우회하지 않고 키도 다루지 않습니다. 사용자마다 **자�
 라이선스를 받아 4K로 재생).
 
 ## 진행 상황
-- [x] 애드온 기본 구조(`addon.xml`, `default.py`, 라우터, 설정, en_GB / ko_KR)
+- [x] 애드온 기본 구조(`addon.xml`, `default.py`, 라우터, 설정)
+- [x] **12개 언어** — 영어, 한국어, 일본어, 중국어(간체·번체), 독일어, 프랑스어, 스페인어,
+      이탈리아어, 브라질 포르투갈어, 러시아어, 폴란드어. 영어 외 번역은 초안이라
+      `resources/language/*/strings.po` 수정 제안을 환영합니다
 - [x] **재생** — 임베디드 WebView2(4K + Kodi 자막 폰트 + OSD) / 위임 모드 대체 경로
 - [x] **자체 실행형 런타임**(`nfbridge_player.exe`, 외부 Python 불필요)
 - [x] **자막 폰트** — Kodi `media/Fonts` 폰트 + OTS 복구 + 사용자 알림
@@ -118,7 +124,7 @@ DRM을 우회하지 않고 키도 다루지 않습니다. 사용자마다 **자�
       guid)을 기억합니다. 안 되면 창을 띄워 직접 고르게 합니다.
 - [x] **D7361 방지** — GPU 드라이버나 PlayReady/MediaFoundation DLL이 바뀌면 WebView2의
       CDM 저장소를 비웁니다.
-- [ ] macOS WKWebView 호스트. Linux는 계속 위임 모드
+- [ ] 다른 OS — 계획 없음(2026년 10월 검토: 숨긴 브라우저를 띄울 현실적인 방법이 없음)
 
 ## 파일
 | 파일 | 역할 |

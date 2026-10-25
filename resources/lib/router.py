@@ -49,7 +49,7 @@ def dispatch(base_url, handle, query):
     if action not in _NO_BROWSE and not kodiutils.is_playing():
         from resources.lib import player, cache
         client = player.browse_client()
-        if not client.running():
+        if client.down():
             cache.clear()
             kodiutils.notify(kodiutils.localize(30009, 'Starting Netflix...'))
             if client.ensure() and action not in _ROOT_SAFE:
