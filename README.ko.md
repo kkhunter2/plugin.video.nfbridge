@@ -94,9 +94,10 @@ Python 같은 다른 프로그램은 설치하지 않아도 됩니다. 필요한
 켜면 애드온이 이전 DRM 정보를 지우고 새로 받게 합니다.
 
 **다른 넷플릭스 계정으로 바꾸고 싶어요.**
-지금은 애드온 안에서 로그아웃할 수 없습니다. Kodi를 끄고
-`%APPDATA%\Kodi\userdata\addon_data\plugin.video.nfbridge\webview_profile` 폴더를 지운 다음,
-Kodi를 다시 켜서 새 계정으로 로그인하세요.
+홈 맨 아래 "로그아웃"을 고르고 확인을 누르세요. "Netflix 로그인" 항목이 나오면 다른 계정으로
+로그인하면 됩니다. 0.3.2 이하 버전에서는 이 메뉴로 로그아웃되지 않으니, Kodi를 끄고
+`%APPDATA%\Kodi\userdata\addon_data\plugin.video.nfbridge\webview_profile` 폴더를 지운 다음
+다시 로그인하세요.
 
 **넷플릭스에 새로 생긴 줄이 안 보여요.**
 목록은 3시간마다 새로 받습니다. 바로 보고 싶으면 프로필 전환에서 지금 프로필을 다시 고르세요.

@@ -410,6 +410,34 @@ def _navigate(window, url, wait=6):
             pass
 
 
+def _sign_out(window, timeout=20):
+    """Sign the session out of Netflix with the account menu's own link, then park the
+    window on the sign-in form: /health then reports login, so the add-on offers 'Sign in
+    to Netflix' again (and the next sign-in may be another account)."""
+    _set_fullscreen(window, False)
+    _render_offscreen(window)
+    try:
+        link = window.evaluate_js('var a=document.querySelector("a[href*=SignOut]");a?a.href:""') or ''
+    except Exception:
+        link = ''
+    _navigate(window, link or 'https://www.netflix.com/SignOut?lnkctr=mL', wait=timeout)
+    time.sleep(1)                  # let the sign-out page finish before leaving it
+    # still signed in, /login bounces to /browse; signed out, it stays on the form
+    _navigate(window, 'https://www.netflix.com/login', wait=timeout)
+    href = ''
+    for _ in range(timeout * 2):
+        try:
+            href = window.evaluate_js('location.href') or ''
+        except Exception:
+            href = ''
+        if '/login' in href or '/browse' in href:
+            break
+        time.sleep(0.5)
+    _login[0] = '/login' in href
+    _ready[0] = False
+    return {'ok': _login[0], 'href': href}
+
+
 def _search_get(window, q, timeout=15):
     _navigate(window, 'https://www.netflix.com/search?q=' + quote(q, safe="!'()*"))
     for _ in range(timeout * 2):
@@ -1212,6 +1240,8 @@ def _start_rpc(window, port):
                     videos=bool(req.get('videos')), quiet=bool(req.get('quiet'))))
             elif self.path == '/switch':
                 send(self, 200, _switch_profile(window, req.get('index', 0), req.get('guid', '')))
+            elif self.path == '/signout':
+                send(self, 200, _sign_out(window))
             elif self.path == '/eval':
                 try:
                     send(self, 200, {'result': window.evaluate_js(req.get('js', ''))})

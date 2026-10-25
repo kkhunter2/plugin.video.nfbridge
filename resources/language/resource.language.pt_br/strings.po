@@ -145,8 +145,8 @@ msgid "Could not load category: {0}"
 msgstr "Não foi possível carregar a categoria: {0}"
 
 msgctxt "#30046"
-msgid "To sign out, use the account menu in the Netflix window"
-msgstr "Para sair, use o menu da conta na janela da Netflix"
+msgid "Sign out of Netflix on this PC?"
+msgstr "Sair da Netflix neste PC?"
 
 msgctxt "#30047"
 msgid "Could not load My List: {0}"
@@ -171,6 +171,14 @@ msgstr "Temporada {0}"
 msgctxt "#30052"
 msgid "Search Netflix"
 msgstr "Buscar na Netflix"
+
+msgctxt "#30053"
+msgid "Signed out of Netflix"
+msgstr "Você saiu da Netflix"
+
+msgctxt "#30054"
+msgid "Could not sign out - try again"
+msgstr "Não foi possível sair, tente novamente"
 
 # ---- Settings: categories ----
 msgctxt "#30100"

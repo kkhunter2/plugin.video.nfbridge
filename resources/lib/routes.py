@@ -264,8 +264,30 @@ def signin():
 
 
 def signout():
+    """Sign out of Netflix, after a confirmation. The daemon's session ends and it waits on
+    the sign-in form, so Home offers 'Sign in to Netflix' again (another account works
+    too). The saved lists and the remembered profile belonged to the old session."""
+    import xbmc
+    import xbmcgui
+    if not xbmcgui.Dialog().yesno(kodiutils.localize(30005, 'Sign out'),
+                                  kodiutils.localize(30046, 'Sign out of Netflix on this PC?')):
+        return
+    c = _client()
+    ok = False
+    if c.ensure():
+        try:
+            ok = bool(c.sign_out().get('ok'))
+        except Exception as exc:  # noqa
+            kodiutils.log('sign out failed: {0}'.format(exc))
+    elif c.health().get('login'):
+        ok = True                   # already on the sign-in form
+    if not ok:
+        return kodiutils.notify(kodiutils.localize(30054, 'Could not sign out - try again'))
     cache.clear()
-    kodiutils.notify(kodiutils.localize(30046, 'To sign out, use the account menu in the Netflix window'))
+    kodiutils.set_setting('profile_index', 0)
+    kodiutils.set_setting('profile_guid', '')
+    kodiutils.notify(kodiutils.localize(30053, 'Signed out of Netflix'))
+    xbmc.executebuiltin('Container.Update({0},replace)'.format(kodiutils.url_for(action='root')))
 
 
 def play():

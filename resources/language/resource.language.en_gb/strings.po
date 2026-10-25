@@ -145,7 +145,7 @@ msgid "Could not load category: {0}"
 msgstr ""
 
 msgctxt "#30046"
-msgid "To sign out, use the account menu in the Netflix window"
+msgid "Sign out of Netflix on this PC?"
 msgstr ""
 
 msgctxt "#30047"
@@ -170,6 +170,14 @@ msgstr ""
 
 msgctxt "#30052"
 msgid "Search Netflix"
+msgstr ""
+
+msgctxt "#30053"
+msgid "Signed out of Netflix"
+msgstr ""
+
+msgctxt "#30054"
+msgid "Could not sign out - try again"
 msgstr ""
 
 # ---- Settings: categories ----

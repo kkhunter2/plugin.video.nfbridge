@@ -165,6 +165,11 @@ class NetflixClient:
     def context(self):
         return self._get('/context')
 
+    def sign_out(self):
+        """Sign the daemon's Netflix session out; it then waits on the sign-in form.
+        {'ok': True} once the page is on that form."""
+        return self._post('/signout', {}, timeout=60) or {}
+
     def go_home(self):
         """Put the daemon back on /browse (after search / a title page / playback)."""
         try:

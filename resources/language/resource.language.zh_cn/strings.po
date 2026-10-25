@@ -145,8 +145,8 @@ msgid "Could not load category: {0}"
 msgstr "无法加载分类：{0}"
 
 msgctxt "#30046"
-msgid "To sign out, use the account menu in the Netflix window"
-msgstr "如需退出登录，请使用 Netflix 窗口中的帐户菜单"
+msgid "Sign out of Netflix on this PC?"
+msgstr "要在这台电脑上退出 Netflix 登录吗？"
 
 msgctxt "#30047"
 msgid "Could not load My List: {0}"
@@ -171,6 +171,14 @@ msgstr "第 {0} 季"
 msgctxt "#30052"
 msgid "Search Netflix"
 msgstr "搜索 Netflix"
+
+msgctxt "#30053"
+msgid "Signed out of Netflix"
+msgstr "已退出 Netflix 登录"
+
+msgctxt "#30054"
+msgid "Could not sign out - try again"
+msgstr "无法退出登录，请重试"
 
 # ---- Settings: categories ----
 msgctxt "#30100"

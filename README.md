@@ -98,9 +98,11 @@ This Netflix DRM error tends to appear after a graphics driver or Windows update
 Restart Kodi: the add-on then clears the old DRM data and Netflix sets it up again.
 
 **I want to use a different Netflix account.**
-You can't sign out from inside the add-on yet. Close Kodi, delete
-`%APPDATA%\Kodi\userdata\addon_data\plugin.video.nfbridge\webview_profile`, then start
-Kodi again and sign in with the other account.
+Choose "Sign out" at the bottom of the home screen and confirm. When "Sign in to Netflix"
+appears, sign in with the other account. In 0.3.2 and earlier that menu doesn't actually
+sign you out; close Kodi, delete
+`%APPDATA%\Kodi\userdata\addon_data\plugin.video.nfbridge\webview_profile`, and sign in
+again.
 
 **A new Netflix row doesn't show up.**
 Lists are reloaded every 3 hours. To get them now, go to Switch profile and pick the
