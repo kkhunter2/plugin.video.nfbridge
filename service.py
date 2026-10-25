@@ -24,6 +24,15 @@ def _prestart():
         kodiutils.log('prestart failed: {0}'.format(exc))
 
 
+def _refresh_open_list():
+    """Redraw the add-on's list if one is on screen."""
+    try:
+        if 'plugin.video.nfbridge' in (xbmc.getInfoLabel('Container.FolderPath') or ''):
+            xbmc.executebuiltin('Container.Refresh')
+    except Exception:
+        pass
+
+
 def main():
     monitor = xbmc.Monitor()
     client = nfclient.NetflixClient(port=player.DAEMON_PORT)
@@ -38,6 +47,7 @@ def main():
         prestart = threading.Thread(target=_prestart, daemon=True)
         prestart.start()
     missed = False
+    signins = None
     while not monitor.abortRequested():
         h = client.health()
         if not h and was_playing and not missed:
@@ -75,11 +85,14 @@ def main():
             # Wait first: the daemon reloads /browse on stop, so fresh bookmarks need a moment.
             monitor.waitForAbort(3)
             cache.mark_watched()
-            try:
-                if 'plugin.video.nfbridge' in (xbmc.getInfoLabel('Container.FolderPath') or ''):
-                    xbmc.executebuiltin('Container.Refresh')
-            except Exception:
-                pass
+            _refresh_open_list()
+        # a sign-in (or a profile picked in the window) just finished: a list on screen was
+        # made before it (e.g. only 'Sign in to Netflix'), so draw it again
+        n = h.get('signins')
+        if n is not None:
+            if signins is not None and n > signins:
+                _refresh_open_list()
+            signins = n
         was_playing = playing
         if monitor.waitForAbort(2):
             break

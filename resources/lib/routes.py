@@ -179,11 +179,14 @@ def row():
             lambda: c.row_videos(root_id, index, n=40, title=title), keep=_warm,
             refresh=_cw_marks(c) if kodiutils.param('cw') else c.refresh_marks)
     except nfclient.RowGone:
-        # the (fully loaded) page no longer has this row: drop its cached row list so the
-        # next visit rebuilds it from the current page
+        # the (fully loaded) page no longer has this row (Netflix shows some rows only for
+        # a while, e.g. at certain times of day): stay on the row list and reload it from
+        # the current page, rather than opening an empty folder
+        import xbmc
         cache.drop(_page_key(root_id))
         kodiutils.notify(kodiutils.localize(30042, 'This row is no longer on Netflix'))
-        return kodiutils.end_directory()
+        kodiutils.end_directory(succeeded=False)
+        return xbmc.executebuiltin('Container.Refresh')
     except Exception as exc:  # noqa
         kodiutils.notify(kodiutils.localize(30043, 'Could not load row: {0}').format(exc))
         return kodiutils.end_directory()
@@ -265,8 +268,9 @@ def signin():
 
 def signout():
     """Sign out of Netflix, after a confirmation. The daemon's session ends and it waits on
-    the sign-in form, so Home offers 'Sign in to Netflix' again (another account works
-    too). The saved lists and the remembered profile belonged to the old session."""
+    the sign-in form, the saved lists and the remembered profile are dropped, and Kodi goes
+    back to its home screen; opening the add-on again offers 'Sign in to Netflix' (any
+    account)."""
     import xbmc
     import xbmcgui
     if not xbmcgui.Dialog().yesno(kodiutils.localize(30005, 'Sign out'),
@@ -287,7 +291,9 @@ def signout():
     kodiutils.set_setting('profile_index', 0)
     kodiutils.set_setting('profile_guid', '')
     kodiutils.notify(kodiutils.localize(30053, 'Signed out of Netflix'))
-    xbmc.executebuiltin('Container.Update({0},replace)'.format(kodiutils.url_for(action='root')))
+    # leave the add-on: the lists on screen belonged to the session that just ended; the
+    # next open offers 'Sign in to Netflix'
+    xbmc.executebuiltin('ActivateWindow(Home)')
 
 
 def play():

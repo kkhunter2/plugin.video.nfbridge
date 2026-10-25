@@ -195,11 +195,41 @@ def add_directory(label, url, art=None, info=None, is_folder=True, playable=Fals
     xbmcplugin.addDirectoryItem(handle(), url, li, isFolder=is_folder)
 
 
-def end_directory(content='videos', sort=True):
+def end_directory(content='videos', sort=True, succeeded=True):
+    """succeeded=False: no listing; Kodi stays on the list the user came from."""
+    if not succeeded:
+        xbmcplugin.endOfDirectory(handle(), succeeded=False, cacheToDisc=False)
+        return
     if sort:
         xbmcplugin.addSortMethod(handle(), xbmcplugin.SORT_METHOD_UNSORTED)
     xbmcplugin.setContent(handle(), content)
-    xbmcplugin.endOfDirectory(handle())
+    # cacheToDisc=False: Kodi otherwise saves a listing that took over a second and shows
+    # that copy on the next visit without asking the add-on, so a list outlived a sign-out,
+    # a profile switch or a watched mark. The add-on's own cache keeps lists fast.
+    xbmcplugin.endOfDirectory(handle(), cacheToDisc=False)
+
+
+def drop_kodi_listings():
+    """Delete the copies of this add-on's lists that Kodi saved for its windows
+    (special://temp/archive_cache/<window>-<crc>.fi). Kodi shows such a copy instead of
+    asking the add-on; versions up to 0.3.2 let it save them."""
+    d = xbmcvfs.translatePath('special://temp/archive_cache/')
+    try:
+        names = os.listdir(d)
+    except OSError:
+        return
+    tag = ('plugin://' + ADDON_ID).encode('utf-8')
+    for name in names:
+        if not name.endswith('.fi'):
+            continue
+        path = os.path.join(d, name)
+        try:
+            with open(path, 'rb') as fh:
+                ours = tag in fh.read()
+            if ours:
+                os.remove(path)
+        except OSError:
+            pass
 
 
 def prompt(heading=None):

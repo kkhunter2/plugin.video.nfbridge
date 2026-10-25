@@ -1189,7 +1189,8 @@ def _start_rpc(window, port):
                     finally:
                         _rpc_lock.release()
                 return send(self, 200, {'ready': _ready[0], 'login': _login[0],
-                                        'ver': _CODE_VER, 'playing': _FS[0]})
+                                        'ver': _CODE_VER, 'playing': _FS[0],
+                                        'signins': _SIGNINS[0]})
             if self.path == '/quit':
                 send(self, 200, {'ok': True})
                 threading.Timer(0.3, lambda: os._exit(0)).start()
@@ -1383,6 +1384,9 @@ MUTE_PREVIEWS_JS = (
 # until the user is signed in and past the gate. At launch the window is off-screen, so
 # this starts False (the first load's gate is auto-entered and focus stays with Kodi).
 AUTH_SHOWN = [False]
+# how many times the window, surfaced for the user (sign-in / profile pick), was done and
+# hidden again; /health reports it so the add-on can redraw a list made before that
+_SIGNINS = [0]
 
 
 def window_monitor(window):
@@ -1473,6 +1477,7 @@ def window_monitor(window):
                         if signed_in and not on_login and not on_gate:
                             _hide_to_kodi(window)
                             AUTH_SHOWN[0] = False
+                            _SIGNINS[0] += 1
                     else:
                         # not surfaced for auth: if our window re-grabbed the foreground, push
                         # it off-screen and return focus to Kodi. Runs every tick, so a late

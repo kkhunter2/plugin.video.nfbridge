@@ -160,8 +160,10 @@ def drop(key):
 
 
 def clear():
+    """Forget every saved list: ours, and the copies Kodi kept of this add-on's lists."""
     import shutil
     try:
         shutil.rmtree(_dir())
     except Exception:
         pass
+    kodiutils.drop_kodi_listings()
