@@ -109,8 +109,8 @@ class NetflixClient:
             s.close()
 
     def down(self):
-        """Daemon certainly not running: two failed probes, since acting on 'down' (e.g. the
-        router dropping the cache) shouldn't hang on a single connect that was slow."""
+        """Daemon certainly not running: two failed probes, since acting on 'down' (the
+        router relaunching it and going Home) shouldn't hang on a single connect that was slow."""
         return not self.running() and not self.running()
 
     def ensure(self, stop=None):

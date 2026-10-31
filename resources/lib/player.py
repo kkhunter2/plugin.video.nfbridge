@@ -381,7 +381,7 @@ def _code_ver():
         cmd = _webview_cmd()
         if not cmd:
             return None
-        runtime_file = cmd[0] if cmd[0].lower().endswith('.exe') else cmd[1]
+        runtime_file = cmd[-1]      # [bundled exe] or [python.exe, host script]
         mtime = str(int(os.path.getmtime(runtime_file)))
         return mtime + '|' + str(kodi_subs._get('subtitles.fontname') or '')
     except Exception:

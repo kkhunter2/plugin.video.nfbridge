@@ -2,7 +2,7 @@
 """Tiny file cache so repeated Kodi navigations don't re-query the daemon.
 
 Each plugin invocation is a fresh process, so the cache is on disk (addon profile).
-Keys are short slugs; values are JSON-serialisable. Cleared on profile switch / sign-out.
+Keys are short slugs; values are JSON-serialisable. Cleared on profile switch / sign-in / sign-out.
 
 Playback does NOT clear it: rebuilding a list means re-navigating the daemon's page
 (seconds per list), while watching mostly changes resume / watched marks. Playback stops

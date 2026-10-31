@@ -263,6 +263,7 @@ def genre():
 # signin / signout are ACTION items (is_folder=False): Kodi runs the plugin without a
 # directory handle, so there is no directory to end.
 def signin():
+    cache.clear()       # the saved lists may be another account's (an expired session)
     player.launch_signin()
 
 
