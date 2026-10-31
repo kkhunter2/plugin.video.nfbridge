@@ -180,6 +180,14 @@ msgctxt "#30054"
 msgid "Could not sign out - try again"
 msgstr "Не удалось выйти, повторите попытку"
 
+msgctxt "#30056"
+msgid "Windows blocked the Netflix player (Smart App Control) - see the README"
+msgstr "Windows заблокировала проигрыватель Netflix (интеллектуальное управление приложениями) — см. README"
+
+msgctxt "#30057"
+msgid "Could not start the Netflix player: {0}"
+msgstr "Не удалось запустить проигрыватель Netflix: {0}"
+
 # ---- Settings: categories ----
 msgctxt "#30100"
 msgid "General"

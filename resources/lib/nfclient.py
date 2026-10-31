@@ -135,9 +135,9 @@ class NetflixClient:
                     time.sleep(0.5)
                 up = self.running()
         if not up:
-            if not self.launcher:
+            # launcher() is False when the launch failed outright (nothing to wait for)
+            if not self.launcher or self.launcher() is False:
                 return False
-            self.launcher()
         # poll 4x a second: a 1 s step cost ~0.5 s on every daemon launch. Monotonic: this
         # runs at Kodi start (the prefetch), when Windows time sync may step the clock.
         login_ticks = 0
@@ -151,7 +151,8 @@ class NetflixClient:
                 # the launch this caller deferred to (another caller's, see
                 # player._ensure_daemon) never opened its port: it died or was quit
                 relaunched = True
-                self.launcher()
+                if self.launcher() is False:
+                    return False
             h = self.health()
             if h.get('ready'):
                 return True

@@ -180,6 +180,14 @@ msgctxt "#30054"
 msgid "Could not sign out - try again"
 msgstr "無法登出，請再試一次"
 
+msgctxt "#30056"
+msgid "Windows blocked the Netflix player (Smart App Control) - see the README"
+msgstr "Windows 封鎖了 Netflix 播放器（智慧型應用程式控制）- 請參閱 README"
+
+msgctxt "#30057"
+msgid "Could not start the Netflix player: {0}"
+msgstr "無法啟動 Netflix 播放器：{0}"
+
 # ---- Settings: categories ----
 msgctxt "#30100"
 msgid "General"

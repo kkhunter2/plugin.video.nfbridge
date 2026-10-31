@@ -180,6 +180,14 @@ msgctxt "#30054"
 msgid "Could not sign out - try again"
 msgstr "ログアウトできませんでした。もう一度お試しください"
 
+msgctxt "#30056"
+msgid "Windows blocked the Netflix player (Smart App Control) - see the README"
+msgstr "WindowsがNetflixプレーヤーをブロックしました(スマート アプリ コントロール)。READMEを参照してください"
+
+msgctxt "#30057"
+msgid "Could not start the Netflix player: {0}"
+msgstr "Netflixプレーヤーを起動できませんでした: {0}"
+
 # ---- Settings: categories ----
 msgctxt "#30100"
 msgid "General"

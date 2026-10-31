@@ -268,7 +268,7 @@ def _ensure_daemon():
     cmd = _webview_cmd()
     if not cmd:
         kodiutils.log('webview runtime not available (build runtime/webview or set webview_python)')
-        return
+        return False
     # The Kodi-start prefetch and the user opening the add-on can both find the daemon
     # down: launch only once. A second one would take the first one's still-starting
     # WebView2 for orphans and kill it (and two first font repairs would clobber each
@@ -284,7 +284,20 @@ def _ensure_daemon():
         # the service that quits it
         _remove(stamp)
         return
-    _SPAWNED[0] = _spawn(cmd, env=env)
+    try:
+        _SPAWNED[0] = _spawn(cmd, env=env)
+    except OSError as exc:
+        # nothing will open the port: free the guard at once (callers would otherwise wait
+        # out its grace), and say why. Smart App Control blocks an unsigned exe it has no
+        # reputation for (WinError 4551; 1260 = blocked by a policy).
+        _remove(stamp)
+        kodiutils.log('player: daemon launch failed: {0}'.format(exc))
+        if getattr(exc, 'winerror', None) in (4551, 1260):
+            kodiutils.notify(kodiutils.localize(
+                30056, 'Windows blocked the Netflix player (Smart App Control) - see the README'))
+        else:
+            kodiutils.notify(kodiutils.localize(30057, 'Could not start the Netflix player: {0}').format(exc))
+        return False
     _write(stamp, 'spawned')
 
 

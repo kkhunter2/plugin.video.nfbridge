@@ -180,6 +180,14 @@ msgctxt "#30054"
 msgid "Could not sign out - try again"
 msgstr "로그아웃하지 못했습니다. 다시 시도하세요"
 
+msgctxt "#30056"
+msgid "Windows blocked the Netflix player (Smart App Control) - see the README"
+msgstr "Windows가 Netflix 플레이어를 차단했습니다(스마트 앱 컨트롤). README를 확인하세요"
+
+msgctxt "#30057"
+msgid "Could not start the Netflix player: {0}"
+msgstr "Netflix 플레이어를 시작하지 못했습니다: {0}"
+
 # ---- Settings: categories ----
 msgctxt "#30100"
 msgid "General"
