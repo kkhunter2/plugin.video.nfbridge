@@ -115,7 +115,7 @@ def _seasons(c, sid):
     # cached_ok never caches an empty result, so a failed load isn't stuck for the TTL
     return cache.cached_ok('eps_{0}'.format(sid), EPS_TTL, _eps,
                            refresh=lambda seasons: c.refresh_marks(
-                               [e for s in seasons for e in s.get('eps', [])]))
+                               [e for s in seasons for e in s.get('eps', [])], show=sid))
 
 
 def _home_data(c, quiet=False):
@@ -340,17 +340,27 @@ def search():
     kodiutils.end_directory(content='movies')
 
 
-def _watch_info(info, bookmark, runtime):
-    """Mark watched (playcount) or in-progress (resume point) from the Netflix bookmark."""
+def _watch_info(info, bookmark, runtime, credits=None):
+    """Mark watched (playcount) or in-progress (resume point) from the Netflix bookmark.
+    Watched = past the credits, as Netflix counts it (90% of the runtime if unknown)."""
     if bookmark and runtime:
-        if bookmark >= runtime * 0.9:
+        if bookmark >= (credits or runtime * 0.9):
             info['playcount'] = 1
         elif bookmark > 0:
             info['resume'] = (bookmark, runtime)
     return info
 
 
-def _render_episodes(eps, show_id):
+def _current_episode(seasons):
+    """The episode Netflix's own Resume button plays; None until something of the show was
+    watched (Netflix names episode 1 then)."""
+    eps = [e for s in seasons for e in s.get('eps', [])]
+    cur = next((e for e in eps if e.get('current')), None)
+    return cur if cur and any((e.get('bookmark') or 0) > 0 for e in eps) else None
+
+
+def _render_episodes(eps, show_id, cur=None):
+    """cur: the episode to open the list on."""
     for e in eps:
         title = e.get('title') or e['id']
         label = 'E{0}  {1}'.format(e['number'], title) if e.get('number') else title
@@ -358,12 +368,14 @@ def _render_episodes(eps, show_id):
                             'plot': e.get('synopsis'), 'season': e.get('season'),
                             'episode': e.get('number'), 'year': e.get('year'),
                             'duration': e.get('runtime'), 'mpaa': e.get('rating')},
-                           e.get('bookmark'), e.get('runtime'))
+                           e.get('bookmark'), e.get('runtime'), e.get('credits'))
         kodiutils.add_directory(
             label, kodiutils.url_for(action='play', id=e['id'], show=show_id),
             art={'thumb': e.get('art'), 'poster': e.get('art')},
             info=info, is_folder=False, playable=True)
     kodiutils.end_directory(content='episodes')
+    if cur in eps:
+        kodiutils.focus_item(eps.index(cur))
 
 
 def show():
@@ -405,8 +417,9 @@ def show():
         _add_item({'id': sid, 'title': (info or {}).get('title') or sid, 'type': 'movie',
                    'art': (info or {}).get('art'), 'synopsis': (info or {}).get('synopsis')})
         return kodiutils.end_directory(content='movies')
+    cur = _current_episode(seasons)
     if len(seasons) == 1:
-        return _render_episodes(seasons[0].get('eps', []), sid)
+        return _render_episodes(seasons[0].get('eps', []), sid, cur)
     for i, s in enumerate(seasons):
         label = s.get('title') or kodiutils.localize(30051, 'Season {0}').format(s.get('number') or i + 1)
         cnt = len(s.get('eps', []))
@@ -414,6 +427,10 @@ def show():
             '{0}  ({1})'.format(label, cnt) if cnt else label,
             kodiutils.url_for(action='season', show=sid, i=str(i)), is_folder=True)
     kodiutils.end_directory(content='seasons')
+    for i, s in enumerate(seasons):
+        if cur in s.get('eps', []):
+            kodiutils.focus_item(i)     # open on the season holding it
+            break
 
 
 def season():
@@ -428,5 +445,5 @@ def season():
         kodiutils.notify(str(exc))
         return kodiutils.end_directory()
     if idx < len(seasons):
-        return _render_episodes(seasons[idx].get('eps', []), sid)
+        return _render_episodes(seasons[idx].get('eps', []), sid, _current_episode(seasons))
     kodiutils.end_directory(content='episodes')

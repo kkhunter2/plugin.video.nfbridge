@@ -343,9 +343,10 @@ class NetflixClient:
             v['title'] = _txt(v.get('title'))
         return vids
 
-    def refresh_marks(self, vids):
+    def refresh_marks(self, vids, show=None):
         """Re-read the bookmark (resume point) of already-listed videos in place: ONE
-        falcor call, no page navigation. True if it was read (False leaves them as they were)."""
+        falcor call, no page navigation. With show (a show's episodes), also which one
+        Netflix resumes next. True if it was read (False leaves them as they were)."""
         ids = [v['id'] for v in vids if v.get('id')]
         if not ids:
             return False
@@ -362,4 +363,14 @@ class NetflixClient:
             f = fj.get(v.get('id'))
             if isinstance(f, dict) and 'bookmarkPosition' in f:
                 v['bookmark'] = f['bookmarkPosition']
+        if show:
+            try:
+                cur = self.falcor([['videos', str(show), 'current', 'summary']], timeout=5)
+                cur = str(((cur.get('videos') or {}).get(str(show)) or {})
+                          .get('current', {}).get('summary', {}).get('id') or '')
+            except Exception:
+                cur = ''
+            if cur:
+                for v in vids:
+                    v['current'] = v.get('id') == cur
         return True

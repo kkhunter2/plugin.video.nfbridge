@@ -39,7 +39,8 @@ The home screen shows the same rows as the Netflix home page, with Search, My Li
 Series & Movies and Profiles at the top.
 
 Pick a movie and it starts playing. Pick a series and you get its seasons and episodes.
-Resume points and watched marks show up in the Kodi lists too.
+Resume points and watched marks show up in the Kodi lists too, and a series opens on the
+episode you'd continue with.
 
 While a title is playing:
 

@@ -5,7 +5,7 @@ Keeps the rest of the addon free of Kodi boilerplate and easy to unit-test:
 everything Kodi-specific funnels through here.
 """
 import os
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, parse_qsl
 
 import xbmc
 import xbmcgui
@@ -207,6 +207,35 @@ def end_directory(content='videos', sort=True, succeeded=True):
     # that copy on the next visit without asking the add-on, so a list outlived a sign-out,
     # a profile switch or a watched mark. The add-on's own cache keeps lists fast.
     xbmcplugin.endOfDirectory(handle(), cacheToDisc=False)
+
+
+def focus_item(pos):
+    """Open the list this invocation just ended on its item #pos (0 = the first, '..' not
+    counted). Kodi has no API for it: the list appears only after endOfDirectory, and Kodi
+    then restores the selection it remembers for that path. So wait for the list, move the
+    focus and check that it held. Gives up after 3 s (e.g. the user has left the list)."""
+    import time
+    landed = False
+    tries = 3       # a selection that won't stick mustn't keep taking the focus from the user
+    for _ in range(30):
+        time.sleep(0.1)
+        path = xbmc.getInfoLabel('Container.FolderPath')
+        if (dict(parse_qsl(urlsplit(path).query)) != _CTX['params']
+                or xbmc.getCondVisibility('Container.IsUpdating')):
+            continue
+        # Container.CurrentItem counts from 1 without '..'; SetFocus's position counts '..'
+        if xbmc.getInfoLabel('Container.CurrentItem') == str(pos + 1):
+            if landed:
+                return
+            landed = True
+        elif tries:
+            tries -= 1
+            landed = False
+            xbmc.executebuiltin('SetFocus({0},{1},absolute)'.format(
+                xbmc.getInfoLabel('System.CurrentControlId'),
+                pos + (1 if xbmc.getCondVisibility('Container.HasParent') else 0)))
+        else:
+            return
 
 
 def drop_kodi_listings():

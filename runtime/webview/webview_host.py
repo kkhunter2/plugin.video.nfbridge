@@ -522,18 +522,40 @@ def _episodes_get(window, vid, timeout=15):
                     rating = None
                 eps.append({'id': epid, 'title': it.get('title'), 'number': it.get('episode'),
                             'season': it.get('season'), 'year': it.get('releaseYear'),
-                            'runtime': it.get('infoDensityRuntime'), 'art': art,
+                            'runtime': it.get('runtime') or it.get('infoDensityRuntime'), 'art': art,
                             'synopsis': syn, 'rating': rating})
             eps.sort(key=lambda e: e.get('number') or 0)
             if eps:
-                bj = _falcor_get(window, [['videos', e['id'], 'bookmarkPosition'] for e in eps], 15)
+                # runtime + credits too: itemSummary has no runtime, and without one the
+                # list shows no resume / watched marks at all
+                bj = _falcor_get(window, [['videos', [e['id'] for e in eps],
+                                           ['bookmarkPosition', 'runtime', 'creditsOffset']]], 15)
                 bv = (bj.get('json') or {}).get('videos', {})
                 for e in eps:
-                    e['bookmark'] = (bv.get(e['id'], {}) or {}).get('bookmarkPosition')
+                    v = bv.get(e['id'], {}) or {}
+                    e['bookmark'] = v.get('bookmarkPosition')
+                    if not e.get('runtime') and isinstance(v.get('runtime'), (int, float)):
+                        e['runtime'] = v['runtime']
+                    if isinstance(v.get('creditsOffset'), (int, float)):
+                        e['credits'] = v['creditsOffset']
         except Exception:
             pass
         result.append({'id': sid, 'title': sm.get('title'), 'number': sm.get('number'), 'eps': eps})
+    # the episode Netflix's own Resume button plays (it moves on once the credits start)
+    cur = _current_episode(window, vid)
+    for s in result:
+        for e in s['eps']:
+            e['current'] = e['id'] == cur
     return result
+
+
+def _current_episode(window, show_id):
+    try:
+        fj = _falcor_get(window, [['videos', str(show_id), 'current', 'summary']], 10)
+        return str((((fj.get('json') or {}).get('videos') or {}).get(str(show_id)) or {})
+                   .get('current', {}).get('summary', {}).get('id') or '') or None
+    except Exception:
+        return None
 
 
 # Header account menu: one <button data-uia="navigation+profile-menu+switch-profile-<GUID>">
