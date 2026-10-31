@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="plugin.video.nfbridge"
        name="Nflix"
-       version="0.3.3"
+       version="0.3.4"
        provider-name="nfbridge">
   <requires>
     <!-- 3.0.1 = Kodi 20+: the InfoTagVideo setters used for list items need it -->
