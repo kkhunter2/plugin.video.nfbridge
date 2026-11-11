@@ -46,10 +46,6 @@ msgctxt "#30009"
 msgid "Starting Netflix..."
 msgstr "Netflix wird gestartet..."
 
-msgctxt "#30010"
-msgid "Stop the current playback to browse Netflix"
-msgstr "Beenden Sie die aktuelle Wiedergabe, um Netflix zu durchsuchen"
-
 msgctxt "#30011"
 msgid "Profile switched"
 msgstr "Profil gewechselt"

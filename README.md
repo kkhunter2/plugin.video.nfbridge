@@ -71,9 +71,8 @@ need.
 - Lists are kept for 3 hours once loaded (My List for 1 hour). That's why they open
   instantly the second time, but a row Netflix just added can take a while to show up.
   Resume points and watched marks update right after you watch something.
-- When you play something else in Kodi (your own files, another add-on), the Netflix
-  window is closed so the two don't fight over the audio device. It comes back by itself
-  the next time you open Netflix.
+- You can browse Netflix while Kodi plays something else (your own files, another
+  add-on). That playback stops only when you start a Netflix title.
 - Switching profiles clears the saved lists and loads them again.
 
 ## Troubleshooting

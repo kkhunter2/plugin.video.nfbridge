@@ -14,10 +14,7 @@ def _client():
 def _not_ready(c):
     """Explain why the daemon isn't usable and end the (empty) directory."""
     h = c.health()
-    if kodiutils.is_playing():
-        # the service quits the daemon while Kodi plays, so it can't be (re)started now
-        kodiutils.notify(kodiutils.localize(30010, 'Stop the current playback to browse Netflix'))
-    elif h.get('login') or (h and not h.get('ready')):
+    if h.get('login') or (h and not h.get('ready')):
         # parked on the sign-in form (or signed out): offer sign-in as an ACTION item (not
         # a folder), so clicking runs the signin route without opening an empty directory
         kodiutils.add_directory('[B]{0}[/B]'.format(kodiutils.localize(30006, 'Sign in to Netflix')),

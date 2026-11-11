@@ -40,14 +40,11 @@ def dispatch(base_url, handle, query):
         kodiutils.restore_audio()
 
     # Daemon recovery: the detached daemon can die (or is quit by the service on Kodi
-    # shutdown, or when Kodi plays something else) while Kodi still shows a list. If a
-    # browse action finds the daemon down, (re)launch it and land the user on Home. The
-    # saved lists stay: they don't depend on the daemon process, and watching a local file
-    # shouldn't cost every list. Not while Kodi is playing
-    # local / other-addon content: the service quits the daemon whenever Kodi's player is
-    # active (to free the audio device), so launching here would thrash launch<->quit
-    # and can orphan the WebView2 profile lock ("Main window failed to start").
-    if action not in _NO_BROWSE and not kodiutils.is_playing():
+    # shutdown) while Kodi still shows a list. If a browse action finds the daemon down,
+    # (re)launch it and land the user on Home. The saved lists stay: they don't depend on
+    # the daemon process. This also runs while Kodi plays something of its own: browsing
+    # doesn't touch the audio device, only playing a Netflix title stops Kodi's player.
+    if action not in _NO_BROWSE:
         from resources.lib import player
         client = player.browse_client()
         if client.down():

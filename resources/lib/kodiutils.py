@@ -35,15 +35,6 @@ def _audio_marker():
     return os.path.join(profile_dir(), 'audio_saved.json')
 
 
-def is_playing():
-    """True while Kodi's OWN player is active (local file, music, another add-on).
-    Embedded Netflix playback runs outside Kodi's player, so it never counts."""
-    try:
-        return bool(xbmc.Player().isPlaying())
-    except Exception:
-        return False
-
-
 def stop_playback():
     """Stop any video Kodi is itself playing, so the embedded Netflix player isn't
     competing with Kodi for the audio/video device (which otherwise fails -> D7361)."""

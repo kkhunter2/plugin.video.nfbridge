@@ -389,13 +389,10 @@ def _code_ver():
 
 
 def browse_client():
-    """A NetflixClient wired to launch/connect the daemon. While Kodi itself is playing
-    (local file / other add-on) the daemon is NOT launched: the background service quits
-    it whenever Kodi's player is active (to free the audio device), so launching here
-    would just thrash launch<->quit. Cached lists still render; fresh ones wait."""
+    """A NetflixClient wired to launch/connect the daemon (also while Kodi itself is
+    playing a local file / other add-on: browsing needs no audio device)."""
     from resources.lib import nfclient
-    launcher = None if kodiutils.is_playing() else _ensure_daemon
-    return nfclient.NetflixClient(port=DAEMON_PORT, launcher=launcher, code_ver=_code_ver())
+    return nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon, code_ver=_code_ver())
 
 
 def launch_signin(*_args):

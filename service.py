@@ -58,25 +58,10 @@ def main():
         else:
             missed = False
             playing = bool(h.get('playing'))
-        # If Kodi is playing ANY content through its own player -- a local file, YouTube, or
-        # any other streaming add-on -- fully terminate the daemon so its background WebView
-        # cannot hold or contend the audio device. That tab otherwise keeps the (HDMI /
-        # AV-receiver) audio endpoint open, which can silence the other player on some
-        # setups. The daemon relaunches automatically on the next Netflix browse once Kodi's
-        # player is idle (router/browse_client skip the launch while it is active).
-        # (Netflix's own embedded playback does NOT make Kodi's player report isPlaying,
-        # so this never fires during Netflix playback.)
-        if kodiutils.is_playing():
-            try:
-                if client.running():
-                    kodiutils.restore_audio()        # hand audio settings back first
-                    try:
-                        client._get('/quit', timeout=3)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            playing = False
+        # The daemon stays up while Kodi plays something of its own (local file, another
+        # add-on): browsing needs no audio device, and the browse page's previews are muted
+        # and paused by the daemon (MUTE_PREVIEWS_JS). Kodi's player is stopped only when a
+        # Netflix title is actually played (player.play -> kodiutils.stop_playback).
         if was_playing and not playing:
             kodiutils.restore_audio()        # playback stopped -> give audio back to Kodi
             # the bookmark changed during playback; mark the cache watched (lists keep their
