@@ -68,9 +68,12 @@ need.
 
 ## Good to know
 
-- Lists are kept for 3 hours once loaded (My List for 1 hour). That's why they open
-  instantly the second time, but a row Netflix just added can take a while to show up.
-  Resume points and watched marks update right after you watch something.
+- Lists are saved once loaded, so they open instantly the next time, and Back never
+  waits. A list older than 3 hours (My List: 1 hour) still opens instantly with the saved
+  copy; it's reloaded in the background and the new version shows the next time you open
+  it. That's why a row Netflix just added can take a while to show up. Resume points and
+  watched marks usually update right after you watch something; if Netflix is still
+  getting ready, they update the next time you open the list.
 - You can browse Netflix while Kodi plays something else (your own files, another
   add-on). That playback stops only when you start a Netflix title.
 - Switching profiles clears the saved lists and loads them again.
@@ -106,7 +109,8 @@ sign you out; close Kodi, delete
 again.
 
 **A new Netflix row doesn't show up.**
-Lists are reloaded every 3 hours. To get them now, go to Switch profile and pick the
+A list older than 3 hours is reloaded in the background and the new version shows the
+next time you open it. To get them now, go to Switch profile and pick the
 profile you're already using. That clears the saved lists.
 
 ## Why Windows only

@@ -20,18 +20,23 @@ Routes
 """
 from urllib.parse import parse_qsl
 
-from resources.lib import routes, kodiutils
+from resources.lib import routes, kodiutils, cache, player
 
 # actions that neither browse nor need the daemon recovered first
 _NO_BROWSE = ('play', 'signin', 'signout', 'switchprofile', 'pickprofile')
 # actions whose URL params don't depend on a cached page layout
 _ROOT_SAFE = ('root', 'home', 'profiles', 'categories', 'search', 'mylist', 'genre', 'show', 'season')
+# list actions that show a saved list at once; the service updates it afterwards
+# (cache.defer, routes.warm)
+DEFERRED = ('root', 'home', 'row', 'genre', 'mylist', 'show', 'season')
 
 
 def dispatch(base_url, handle, query):
     params = dict(parse_qsl(query))
     action = params.get('action', 'root')
     kodiutils.set_context(base_url, handle, params)
+    if action in DEFERRED:
+        cache.touch_foreground()    # the service's background updates wait meanwhile
 
     # Safety net: any non-play action means the user is browsing, not watching, so make
     # sure the audio device / screensaver are back to the user's settings (in case the
@@ -45,7 +50,6 @@ def dispatch(base_url, handle, query):
     # the daemon process. This also runs while Kodi plays something of its own: browsing
     # doesn't touch the audio device, only playing a Netflix title stops Kodi's player.
     if action not in _NO_BROWSE:
-        from resources.lib import player
         client = player.browse_client()
         if client.down():
             kodiutils.notify(kodiutils.localize(30009, 'Starting Netflix...'))
@@ -70,4 +74,19 @@ def dispatch(base_url, handle, query):
         'pickprofile': routes.pickprofile,
     }
     fn = table.get(action, routes.root)
-    fn()
+    # stale marks are re-read at once only if the daemon answers ready within 1 s and is
+    # free (just after a stop it reloads its page; a background update may hold it);
+    # otherwise the service re-reads them
+    def _marks_now():
+        h = player.browse_client().health(timeout=1)
+        return bool(h.get('ready')) and not h.get('busy')
+    cache.defer(action in DEFERRED, marks_now=_marks_now)
+    try:
+        fn()
+    finally:
+        if action in DEFERRED:
+            cache.touch_foreground()    # a long list run: the worker waits from its end
+    if cache.served_stale():
+        # a list redirected to root (daemon was down) is queued as root only
+        cache.queue(dict(params, action=action) if action == params.get('action', 'root')
+                    else {'action': action})

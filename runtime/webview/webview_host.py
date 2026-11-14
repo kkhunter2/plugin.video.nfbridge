@@ -1202,7 +1202,10 @@ def _start_rpc(window, port):
                 # never blocks: refresh readiness only if the window is free this instant.
                 # 'login' = the page sits on the sign-in form, so a caller waiting for
                 # 'ready' can give up at once instead of waiting out its timeout.
-                if _rpc_lock.acquire(blocking=False):
+                # 'busy' = a request holds the window now: 'ready' is then the last known
+                # state, and a new request will wait for that one to finish.
+                busy = not _rpc_lock.acquire(blocking=False)
+                if not busy:
                     try:
                         _ready[0] = bool(window.evaluate_js(READY_JS))
                         _login[0] = '/login' in (window.evaluate_js('location.href') or '')
@@ -1212,7 +1215,7 @@ def _start_rpc(window, port):
                         _rpc_lock.release()
                 return send(self, 200, {'ready': _ready[0], 'login': _login[0],
                                         'ver': _CODE_VER, 'playing': _FS[0],
-                                        'signins': _SIGNINS[0]})
+                                        'signins': _SIGNINS[0], 'busy': busy})
             if self.path == '/quit':
                 send(self, 200, {'ok': True})
                 threading.Timer(0.3, lambda: os._exit(0)).start()
@@ -1243,7 +1246,12 @@ def _start_rpc(window, port):
                 req = json.loads(self.rfile.read(ln) or b'{}')
             except Exception as exc:
                 return send(self, 400, {'err': 'bad request: %s' % exc})
-            if self.path == '/falcor':
+            if req.get('bg') and _FS[0] and self.path in ('/pinot', '/episodes', '/search', '/home'):
+                # a background update (the add-on's service) never navigates the window
+                # away from a playing title. Checked under the lock: a /play that got here
+                # first has set _FS by now.
+                send(self, 200, {'err': 'playing', 'rows': [], 'seasons': [], 'results': []})
+            elif self.path == '/falcor':
                 send(self, 200, _falcor_get(window, req.get('paths', []), req.get('timeout', 20)))
             elif self.path == '/art':
                 send(self, 200, _art_get(window, req.get('ids', [])))
@@ -1260,7 +1268,7 @@ def _start_rpc(window, port):
                 send(self, 200, _pinot_page(
                     window, req.get('path') or '/browse', rows=int(req.get('rows') or 40),
                     row=req.get('row'), title=req.get('title'), n=int(req.get('n') or 40),
-                    videos=bool(req.get('videos')), quiet=bool(req.get('quiet'))))
+                    videos=bool(req.get('videos')), quiet=bool(req.get('quiet') or req.get('bg'))))
             elif self.path == '/switch':
                 send(self, 200, _switch_profile(window, req.get('index', 0), req.get('guid', '')))
             elif self.path == '/signout':

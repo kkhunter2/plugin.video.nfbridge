@@ -11,8 +11,61 @@ def _client():
     return player.browse_client()
 
 
+class NotReady(Exception):
+    """The daemon couldn't be made ready for a fetch the list needed."""
+
+
+class _Lazy(object):
+    """The browse client, made ready (c.ensure()) on its first data call only. A list
+    served from the cache then doesn't wait for the daemon: after a playback the daemon
+    reloads its page for seconds, and Kodi re-runs the add-on on every Back."""
+
+    def __init__(self, c):
+        self.real = c
+        self._ok = False
+
+    def __getattr__(self, name):
+        attr = getattr(self.real, name)
+        if not callable(attr):
+            return attr
+
+        def call(*a, **kw):
+            warm = kodiutils.warm()
+            # The service's background update never touches the daemon once a title is
+            # starting / playing, never launches it, and its requests are flagged bg: the
+            # daemon itself then refuses to navigate during playback (checked under its
+            # request lock, so a /play queued first wins).
+            if warm and kodiutils.netflix_playing():
+                raise NotReady()
+            if not self._ok:
+                if warm:
+                    import xbmc
+                    if not self.real.running():
+                        raise NotReady()
+                    self.real.bg = True
+                    # never (re)start the daemon from the background: no version check (it
+                    # would quit an older daemon) and no launcher. The add-on's next list
+                    # does the version restart in the foreground.
+                    self.real.code_ver = None
+                    self.real.launcher = None
+                    ok = self.real.ensure(stop=xbmc.Monitor().abortRequested)
+                else:
+                    ok = self.real.ensure()
+                if not ok or (warm and kodiutils.netflix_playing()):
+                    raise NotReady()
+                self._ok = True
+            return attr(*a, **kw)
+        return call
+
+
+def _lazy_client():
+    return _Lazy(_client())
+
+
 def _not_ready(c):
     """Explain why the daemon isn't usable and end the (empty) directory."""
+    if kodiutils.warm():
+        return
     h = c.health()
     if h.get('login') or (h and not h.get('ready')):
         # parked on the sign-in form (or signed out): offer sign-in as an ACTION item (not
@@ -92,8 +145,9 @@ def _cw_marks(c):
 
 
 def _home_refresh(data):
-    # Home has no marks, but the first playback of a profile adds a Continue Watching row
-    return None if any(r.get('cw') for r in data['rows']) else cache.REBUILD
+    # Home has no marks, but the first playback of a profile adds a Continue Watching row.
+    # True: up to date (stored as read now, so later visits skip the readiness probe).
+    return True if any(r.get('cw') for r in data['rows']) else cache.REBUILD
 
 
 def _page_key(root):
@@ -117,8 +171,9 @@ def _seasons(c, sid):
 
 def _home_data(c, quiet=False):
     # row titles only (no marks); rebuilding it scrolls the daemon's whole home
-    return cache.cached('home', PAGE_TTL, lambda: c.home(n_rows=40, quiet=quiet),
-                        refresh=_home_refresh)
+    # an empty home (a quiet request the daemon refused during playback) isn't kept
+    return cache.cached_when('home', PAGE_TTL, lambda: c.home(n_rows=40, quiet=quiet),
+                             keep=lambda d: bool(d.get('rows')), refresh=_home_refresh)
 
 
 def prefetch(stop=None):
@@ -134,17 +189,35 @@ def prefetch(stop=None):
         _home_data(c, quiet=True)
 
 
+def warm(params):
+    """Service: bring the saved lists behind a list route up to date (rebuild an expired
+    one, re-read stale marks) by running the route with no directory and no dialogs."""
+    fn = {'root': root, 'home': home, 'row': row, 'genre': genre, 'mylist': my_list,
+          'show': show, 'season': season}.get(params.get('action') or 'root')
+    if fn is None:
+        return
+    kodiutils.set_context('plugin://{0}/'.format(kodiutils.ADDON_ID), -1, dict(params), warm=True)
+    cache.defer(False)
+    try:
+        fn()
+    finally:
+        # the service's other threads (prestart) share this module state
+        kodiutils.set_context('', -1, {})
+
+
 # ---------------------------------------------------------------- routes ------
 def root():
     home()
 
 
 def home():
-    c = _client()
-    if not c.ensure():
-        return _not_ready(c)
+    c = _lazy_client()
     try:
-        data = _home_data(c)
+        # quiet in the background: the daemon refuses it during playback and leaves the
+        # foreground window alone
+        data = _home_data(c, quiet=kodiutils.warm())
+    except NotReady:
+        return _not_ready(c.real)
     except Exception as exc:  # noqa
         kodiutils.notify(kodiutils.localize(30041, 'Could not load home: {0}').format(exc))
         return kodiutils.end_directory(content='files')
@@ -161,9 +234,7 @@ def home():
 
 
 def row():
-    c = _client()
-    if not c.ensure():
-        return _not_ready(c)
+    c = _lazy_client()
     root_id = kodiutils.param('root') or '/browse'
     index = int(kodiutils.param('index') or '0')
     title = kodiutils.param('title') or ''
@@ -181,9 +252,13 @@ def row():
         # the current page, rather than opening an empty folder
         import xbmc
         cache.drop(_page_key(root_id))
+        if kodiutils.warm():
+            return
         kodiutils.notify(kodiutils.localize(30042, 'This row is no longer on Netflix'))
         kodiutils.end_directory(succeeded=False)
         return xbmc.executebuiltin('Container.Refresh')
+    except NotReady:
+        return _not_ready(c.real)
     except Exception as exc:  # noqa
         kodiutils.notify(kodiutils.localize(30043, 'Could not load row: {0}').format(exc))
         return kodiutils.end_directory()
@@ -244,12 +319,12 @@ def categories():
 
 
 def genre():
-    c = _client()
-    if not c.ensure():
-        return _not_ready(c)
+    c = _lazy_client()
     gid = kodiutils.param('id')
     try:
         data = cache.cached('genre_{0}'.format(gid), PAGE_TTL, lambda: c.genre(gid))
+    except NotReady:
+        return _not_ready(c.real)
     except Exception as exc:  # noqa
         kodiutils.notify(kodiutils.localize(30045, 'Could not load category: {0}').format(exc))
         return kodiutils.end_directory()
@@ -304,12 +379,12 @@ def play():
 
 
 def my_list():
-    c = _client()
-    if not c.ensure():
-        return _not_ready(c)
+    c = _lazy_client()
     try:
         items = cache.cached_when('mylist', LIST_TTL, c.my_list, keep=_warm,
                                   refresh=c.refresh_marks)
+    except NotReady:
+        return _not_ready(c.real)
     except Exception as exc:  # noqa
         kodiutils.notify(kodiutils.localize(30047, 'Could not load My List: {0}').format(exc))
         return kodiutils.end_directory()
@@ -376,9 +451,7 @@ def _render_episodes(eps, show_id, cur=None):
 
 
 def show():
-    c = _client()
-    if not c.ensure():
-        return _not_ready(c)
+    c = _lazy_client()
     sid = kodiutils.param('id')
     typ = kodiutils.param('type')
     info = {}
@@ -391,6 +464,8 @@ def show():
         try:
             info = cache.cached_ok('info_{0}'.format(sid), EPS_TTL, lambda: c.video_info(sid),
                                    refresh=lambda i: c.refresh_marks([i]))
+        except NotReady:
+            return _not_ready(c.real)
         except Exception as exc:  # noqa
             kodiutils.log('video_info failed for {0}: {1}'.format(sid, exc))
             info = {}
@@ -402,6 +477,8 @@ def show():
 
     try:
         seasons = _seasons(c, sid)
+    except NotReady:
+        return _not_ready(c.real)
     except Exception as exc:  # noqa
         kodiutils.notify(kodiutils.localize(30049, 'Could not load episodes: {0}').format(exc))
         return kodiutils.end_directory()
@@ -431,13 +508,13 @@ def show():
 
 
 def season():
-    c = _client()
-    if not c.ensure():
-        return _not_ready(c)
+    c = _lazy_client()
     sid = kodiutils.param('show')
     idx = int(kodiutils.param('i') or '0')
     try:
         seasons = _seasons(c, sid)
+    except NotReady:
+        return _not_ready(c.real)
     except Exception as exc:  # noqa
         kodiutils.notify(str(exc))
         return kodiutils.end_directory()

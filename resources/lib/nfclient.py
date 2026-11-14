@@ -62,12 +62,15 @@ class NetflixClient:
         self.launcher = launcher
         self.ready_timeout = ready_timeout
         self.code_ver = code_ver   # if the running daemon's /health ver differs -> restart it
+        self.bg = False            # background update: the daemon refuses to navigate during playback
 
     # ---- transport ----
     def _get(self, path, timeout=20):
         return json.loads(urlopen(self.base + path, timeout=timeout).read().decode('utf-8'))
 
     def _post(self, path, obj, timeout=35):
+        if self.bg:
+            obj = dict(obj, bg=True)
         req = Request(self.base + path, data=json.dumps(obj).encode('utf-8'),
                       headers={'Content-Type': 'application/json'})
         return json.loads(urlopen(req, timeout=timeout).read().decode('utf-8'))

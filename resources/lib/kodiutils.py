@@ -80,6 +80,17 @@ def release_audio():
         log('release_audio failed: {0}'.format(exc))
 
 
+def netflix_playing():
+    """A Netflix title is starting or playing: release_audio() saved the audio settings and
+    nothing has restored them yet. A marker older than 6 h is a leftover (Kodi died during
+    a film), not a film: it mustn't stop the lists' background updates for good."""
+    import time
+    try:
+        return time.time() - os.path.getmtime(_audio_marker()) < 6 * 3600
+    except OSError:
+        return False
+
+
 def restore_audio():
     """Restore the settings saved by release_audio() (when playback stops)."""
     import json
@@ -88,7 +99,11 @@ def restore_audio():
         if not os.path.exists(marker):
             return
         xbmc.executebuiltin('InhibitIdleShutdown(false)')
-        saved = json.load(open(marker))
+        try:
+            with open(marker) as fh:
+                saved = json.load(fh)
+        except ValueError:
+            saved = {}              # unreadable: drop it rather than keep it forever
         for key, val in saved.items():
             if val is not None:
                 _jsonrpc('Settings.SetSettingValue', {'setting': key, 'value': val})
@@ -97,13 +112,20 @@ def restore_audio():
         log('restore_audio failed: {0}'.format(exc))
 
 # populated per-invocation by router.set_context()
-_CTX = {'base_url': '', 'handle': -1, 'params': {}}
+_CTX = {'base_url': '', 'handle': -1, 'params': {}, 'warm': False}
 
 
-def set_context(base_url, handle, params):
+def set_context(base_url, handle, params, warm=False):
+    """warm: the service runs a route only to bring its saved lists up to date (no
+    directory, no dialogs; routes.warm)."""
     _CTX['base_url'] = base_url
     _CTX['handle'] = handle
     _CTX['params'] = params
+    _CTX['warm'] = warm
+
+
+def warm():
+    return _CTX['warm']
 
 
 def handle():
@@ -133,6 +155,8 @@ def log(msg, level=xbmc.LOGINFO):
 
 
 def notify(msg, heading=None):
+    if _CTX['warm']:
+        return
     # heading defaults to the add-on's display name (addon.xml) so it always matches
     try:
         heading = heading or ADDON.getAddonInfo('name')
@@ -150,6 +174,8 @@ def localize(string_id, default=''):
 
 def add_directory(label, url, art=None, info=None, is_folder=True, playable=False):
     """Add a folder or an action item to the current directory."""
+    if _CTX['warm']:
+        return
     li = xbmcgui.ListItem(label=label)
     if art:
         li.setArt(art)
@@ -188,6 +214,8 @@ def add_directory(label, url, art=None, info=None, is_folder=True, playable=Fals
 
 def end_directory(content='videos', sort=True, succeeded=True):
     """succeeded=False: no listing; Kodi stays on the list the user came from."""
+    if _CTX['warm']:
+        return
     if not succeeded:
         xbmcplugin.endOfDirectory(handle(), succeeded=False, cacheToDisc=False)
         return
@@ -205,6 +233,8 @@ def focus_item(pos):
     counted). Kodi has no API for it: the list appears only after endOfDirectory, and Kodi
     then restores the selection it remembers for that path. So wait for the list, move the
     focus and check that it held. Gives up after 3 s (e.g. the user has left the list)."""
+    if _CTX['warm']:
+        return
     import time
     landed = False
     tries = 3       # a selection that won't stick mustn't keep taking the focus from the user
@@ -227,6 +257,24 @@ def focus_item(pos):
                 pos + (1 if xbmc.getCondVisibility('Container.HasParent') else 0)))
         else:
             return
+
+
+def showing_list(params):
+    """Kodi shows this add-on's list for these plugin params and is idle: no list loading
+    (busy dialog; Container.IsUpdating stays False during a plugin load) and no dialog open.
+    A Container.Refresh sent while a list loads starts a second, overlapping load."""
+    path = xbmc.getInfoLabel('Container.FolderPath')
+    if not path.startswith('plugin://' + ADDON_ID):
+        return False
+    shown = dict(parse_qsl(urlsplit(path).query))
+    want = dict(params)
+    if want.get('action') == 'root' and 'action' not in shown:
+        shown['action'] = 'root'
+    return (shown == want
+            and not xbmc.getCondVisibility('Window.IsActive(busydialog)')
+            and not xbmc.getCondVisibility('Window.IsActive(busydialognocancel)')
+            and not xbmc.getCondVisibility('Container.IsUpdating')
+            and not xbmc.getCondVisibility('System.HasModalDialog'))
 
 
 def drop_kodi_listings():

@@ -281,9 +281,9 @@ def _ensure_daemon():
     import xbmc
     if xbmc.Monitor().abortRequested():
         # Kodi is exiting (the env can take a while): a daemon started now would outlive
-        # the service that quits it
+        # the service that quits it. False: a waiting nfclient.ensure() stops at once.
         _remove(stamp)
-        return
+        return False
     try:
         _SPAWNED[0] = _spawn(cmd, env=env)
     except OSError as exc:
@@ -519,11 +519,18 @@ def _play_embedded(video_id):
     from resources.lib import nfclient
     c = nfclient.NetflixClient(port=DAEMON_PORT, launcher=_ensure_daemon, code_ver=_code_ver())
     if not c.ensure():
+        kodiutils.restore_audio()   # nothing plays: don't leave the 'playing' marker behind
         kodiutils.notify(kodiutils.localize(30040, 'Not signed in to Netflix - use "Sign in to Netflix" first'))
         return
     try:
-        c._post('/play', {'videoId': video_id})
+        # long timeout: the daemon may first finish a background list update (it runs one
+        # request at a time), and a /play that timed out here still plays there
+        c._post('/play', {'videoId': video_id}, timeout=120)
     except Exception as exc:  # noqa
+        if 'timed out' in str(exc).lower():
+            kodiutils.log('play rpc timed out: {0}; not delegating (the daemon may still play)'.format(exc))
+            kodiutils.notify(kodiutils.localize(30012, 'Netflix is busy - try again'))
+            return
         kodiutils.log('play rpc failed: {0}; delegating'.format(exc))
         _launch_delegate(video_id)
 
